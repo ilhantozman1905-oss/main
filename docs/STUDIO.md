@@ -1,54 +1,51 @@
-# Plaatsing en testen — stap 2
+# Studio acceptance tests — playable alpha 0.2
 
-## Handmatige plaatsing zonder Rojo
+These are **manual tests still to run in Roblox Studio/client**. Cloud Lua adapters validate logic but do not simulate Roblox rendering, physics, replication, services or device input.
 
-Maak mappen aan met exact onderstaande namen. De inhoud van elk bestand hoort in het aangegeven script. De suffix `.lua` hoort niet bij de naam in Explorer.
+## Installation and exact script placement
 
-| Bestand | Pad in Studio | Type |
+Use the built `MoonScrubbers.rbxlx`. Scripts are already installed. For manual source installation:
+
+| Source | Roblox location | Type |
 | --- | --- | --- |
-| `src/shared/Config.lua` | ReplicatedStorage/MoonScrubbers/Shared/Config | ModuleScript |
-| `src/shared/Grid.lua` | ReplicatedStorage/MoonScrubbers/Shared/Grid | ModuleScript |
-| `src/server/Bootstrap.server.lua` | ServerScriptService/MoonScrubbers/Bootstrap | Script |
-| `src/server/Services/PlayerStateService.lua` | ServerScriptService/MoonScrubbers/Services/PlayerStateService | ModuleScript |
-| `src/server/Services/CleaningService.lua` | ServerScriptService/MoonScrubbers/Services/CleaningService | ModuleScript |
-| `src/client/Bootstrap.client.lua` | StarterPlayer/StarterPlayerScripts/MoonScrubbers/Bootstrap | LocalScript |
-| `src/client/Controllers/InputController.lua` | StarterPlayer/StarterPlayerScripts/MoonScrubbers/Controllers/InputController | ModuleScript |
-| `src/client/Controllers/ViewmodelController.lua` | StarterPlayer/StarterPlayerScripts/MoonScrubbers/Controllers/ViewmodelController | ModuleScript |
-| `src/client/Controllers/CleaningController.lua` | StarterPlayer/StarterPlayerScripts/MoonScrubbers/Controllers/CleaningController | ModuleScript |
-| `src/client/Controllers/UIController.lua` | StarterPlayer/StarterPlayerScripts/MoonScrubbers/Controllers/UIController | ModuleScript |
-| `src/client/Controllers/EffectsController.lua` | StarterPlayer/StarterPlayerScripts/MoonScrubbers/Controllers/EffectsController | ModuleScript |
+| `src/shared/*.lua` | `ReplicatedStorage/MoonScrubbers/Shared/<filename without .lua>` | ModuleScript |
+| `src/server/Bootstrap.server.lua` | `ServerScriptService/MoonScrubbers/Bootstrap` | Script |
+| `src/server/Services/*.lua` | `ServerScriptService/MoonScrubbers/Services/<filename without .lua>` | ModuleScript |
+| `src/client/Bootstrap.client.lua` | `StarterPlayer/StarterPlayerScripts/MoonScrubbers/Bootstrap` | LocalScript |
+| `src/client/Controllers/*.lua` | `StarterPlayer/StarterPlayerScripts/MoonScrubbers/Controllers/<filename without .lua>` | ModuleScript |
 
-`Bootstrap` maakt de RemoteEvents, RemoteFunction en testgrond automatisch op de server. De client maakt de HUD en lokale viewmodel aan. Maak deze niet dubbel aan. Gebruik voor dit prototype een lege place en verwijder de standaard Baseplate en SpawnLocation. Publiceren, DataStore-toegang en betaalde assets zijn niet nodig voor deze stap. Stel voor latere gepubliceerde Moon-sessies het maximumspelersaantal in de Roblox-place-instellingen op 4; de configuratiewaarde alleen begrenst Roblox-servers niet.
+Keep existing filenames in the source tree when using Rojo. The project generates `MoonWorld`, lighting, remotes and GUI at runtime. Use an empty test-place, without a duplicate Baseplate, SpawnLocation or old Moon Scrubbers scripts. Set max players to 4 in Roblox place settings. No paid assets are needed.
 
-## Handmatige functionele testmatrix
+## Essential playable loop
 
-Deze tests moeten nog in Roblox Studio worden uitgevoerd:
+1. **Load:** press Play/F5. Expect a welcome menu, credits, tank bar, decorated moon, four bases, five fields and no Output errors. If Studio APIs are unavailable, allow the bounded load retries and check the visible session-only notice. A live-server load failure should refuse entry rather than reset progress.
+2. **UI:** close/reopen screens and scroll cards/navigation on desktop and a small phone emulator. M or gamepad Y opens/closes menus while the brush is equipped; H returns home. GUI selection should allow gamepad navigation. Menu opening releases the camera and stops scrubbing; closing restores equipped first-person mode.
+3. **Clean:** travel to plains, equip BRUSH, look down, hold and sweep. Brush/glove animate; grounded cells fade under the correct target in all four quadrants; dust particles approach the backpack; brushing audio starts only with accepted dust. Standing completely still cannot continuously earn. Full tank stops collection.
+4. **SELL:** press H/HOME. Walk to your own gold SHIP DUST pad. Arrival, prompt, or SELL nearby launches a rocket, empties the backpack and credits its actual stored value. Empty sales pay nothing. Another owner's depot must not sell to their account. Return immediately to clean and repeat.
+5. **Shop:** purchase the paintbrush after two ordinary full shipments (or claim the optional daily reward). Verify price deduction, changed tool name/shape, faster collection, then tank and suit upgrades. Purchases away from home must fail without charging.
+6. **Base:** upgrade each building; inspect visible size/roof/sign changes. Compare configured bonuses. Radio level 2 enables FieldSell only near a zone beacon.
+7. **Zones:** buying a locked zone without the required suit must fail. With the suit and money, unlock/travel; higher-zone dust must retain its higher value through sale, even mixed with plains dust. Rare golden cells are worth 8×. Recently worked cells refill after 100 seconds of inactivity.
+8. **Reset:** reset the character. Your current session profile must survive; a single new tool, backpack and helmet should appear at your base. Menus, suit stats and camera must still work. Jumping should be noticeably lunar with gravity 32.7 and JumpPower 25.
 
-1. **Start:** Play. Geen fouten in Output; HUD, stofgrond en tandenborstel zichtbaar. Begin niet boven een bestaande baseplate. Kijk omlaag tot het middelpunt de grond binnen 10 studs raakt.
-2. **Fysiek poetsen:** houd de actie vast en beweeg de camera rustig links/rechts. De borstel beweegt, stofvlakken vervagen, de blauwe/grijze grond verschijnt, stofdeeltjes vliegen richting rugtank en de tankwaarde stijgt. Het schone vlak moet onder het richtpunt verschijnen, ook in alle vier kwadranten van de zone.
-3. **Stilhouden en bereik:** houd vast zonder te bewegen; de teller mag niet blijven stijgen. Kijk naar de lucht, richt buiten de zone of op grond verder dan 10 studs; geen opbrengst. Een afgeschermd oppervlak achter een extra muur mag geen opbrengst geven.
-4. **Tank en uitrusting:** vul tot exact 50; verdere beweging levert niets op en de HUD meldt vol. Maak voor inspectie in de serverweergave de rugtank zichtbaar: de meter moet dezelfde verhouding tonen. Berg de tool op; camera en poetsknop herstellen en poetsen stopt. Rust opnieuw uit en test opnieuw.
-5. **Levenscyclus:** reset het personage. De tankinhoud blijft binnen deze sessie bestaan, er verschijnt één nieuwe tool en de bediening herstelt. Open het Roblox-menu of wissel venster tijdens poetsen: na terugkeer mag de actie niet vast blijven hangen.
-6. **Multiplayer:** start Server & Clients met 2 spelers. Poets dezelfde cel tegelijk: gedeelde grond blijft consistent en maximaal 4 stof wordt uit die cel toegekend. Laat een tweede client later binnenkomen: deze moet direct de reeds schoongemaakte grond zien. Bekijk de tank van de andere speler.
-7. **Apparaten:** gebruik de Device Emulator in telefoon- en tabletformaat. Houd POETS vast en beweeg met de andere vinger de camera. HUD en touchknop moeten leesbaar blijven. Test met gamepad R2 + rechterstick; opbergen/uitrusten blijft via de standaard Roblox-inventory mogelijk.
-8. **Geluid (indien ingesteld):** zet een geautoriseerde audio-ID in Config. Geluid speelt tijdens daadwerkelijke verzameling en stopt bij loslaten, volle tank of geen nieuwe opbrengst. Check Output op assettoegangsproblemen.
+## Automation, vehicles and retention
 
-## Remotevalidatie testen
+9. Buy a robot, verify it moves in the assigned zone, removes real dust and pays automatically. Reassign it. Higher tiers require radio levels and ownership caps at eight. Check dust conservation with two robots/players on the same cell.
+10. Buy/deploy a vehicle at home. Validate steering/throttle/braking, jump-to-exit, passenger seat, low-gravity bounces, independent tank and automatic unloading near your own depot. A second player must not control the owner's driver input. Test every vehicle tier, especially wide brushes and the final ground-driven ship model.
+11. Daily reward is claimable once per UTC day. At 250/2,000 dust, daily/weekly missions pay once. Every 500 career dust grants one capsule. Robot/vehicle dust counts. Open earned capsules, check reveals, duplicate fragments, crafting, cosmetic equip and displayed normal/pity odds. No Robux purchase should appear.
+12. Confirm prestige only with sufficient credits and explicit confirmation. Business progress resets; cosmetics/fragments/capsules and prestige bonus remain. Check the same base's prompts still work after prestige.
+13. Wait four minutes for the meteor event. Newly collected dust is worth 1.5× for one minute; stored dust cannot be revalued by waiting. Idle radio messages and the current-server earnings board should update.
 
-Voer uitsluitend in een eigen Studio-testsessie deze code uit in de **client** Command Bar:
+## Multiplayer and live services
 
-```lua
-local remote = game.ReplicatedStorage.MoonScrubbers.Remotes.Scrub
-remote:FireServer("invalid")
-remote:FireServer(Vector3.new(0/0, 0, 0))
-remote:FireServer(Vector3.new(100000, 0, 100000))
-for _ = 1, 100 do remote:FireServer(Vector3.new(0, 0, 0)) end
-```
+14. Start Server & Clients with two to four players. Verify exclusive bases, shared cell depletion, separate wallets/storage/shops, nearby teamwork value bonuses and late-join snapshots. Rapidly collecting while a second client joins must not resurrect dust in that client's view. Departure frees the base and removes robots/vehicles/prompts; a new player can reuse the plot.
+15. In a **separate published test experience**, test save → leave → rejoin with tools, suits, money, tanks, buildings, robots, capsules, cosmetics, missions and prestige. Confirm no rollback after a normal autosave/shutdown. A simultaneous profile session must be denied. Offline robot income must be capped to 3h and only awarded once per restored profile.
+16. Test Public/Solo/Friends through the Roblox client. Solo should reserve a private server. Friends displays an eight-character code before moving the host; joining with that code reaches their room. Wrong/expired codes fail safely. The reserved-server access code must never be sent to clients. Ordinary Studio Play should explain unsupported teleports and remain playable locally.
+17. Real mobile and controller hardware: hold-to-scrub + camera movement; menu access; navigation scrolling; vehicle inputs; respawn; opening Roblox's system menu. No action should remain held after focus loss.
 
-Verwacht: geen serverfouten, geen tankoverflow en geen extra stof uit deze ongeldige/stilstaande verzoeken. Probeer daarna met opgeborgen tool een geldig ogend grondpunt te sturen: ook dat mag niets opleveren. Deze validatie voorkomt dat een client zelf bedragen of opbrengsten dicteert; geautomatiseerde beweging van een kwaadaardige client is hiermee niet volledig detecteerbaar.
+## Abuse checks in an owned test session
 
-## Architectuur en vervolg
+Use the client Command Bar to call `Remotes.Scrub` with a string, NaN/infinite vector, distant target, blocked target and unequipped tool; none should grant invalid dust or error. Flood actions and confirm catalog prices, range checks and rate limits remain authoritative. Try negative/NaN/table item indices, nonexistent item names, unaffordable purchases, repeated claims, empty sales and drive inputs from a non-driver. Legitimate requests that pass all checks may award bounded normal gameplay rewards; no client-provided price, amount or rarity is accepted.
 
-`PlayerStateService` beheert tijdelijke tankattributen en de fysieke rugtank. `CleaningService` bezit het raster en valideert afstand, zichtlijn, tool, spelerleven, frequentie, eindige coördinaten en beweging. Geen handler yieldt tussen het verlagen van stof en het verhogen van de tank. Versienummers beschermen de eerste snapshot tegen oudere netwerkupdates. Alleen veranderingen worden gebundeld uitgezonden.
+## Known release limits
 
-De client berekent het richtpunt en tekent effecten. Input, UI, viewmodel en cleaning zijn losse controllers. Stap 3 kan beweging en zwaartekracht toevoegen; stap 4 krijgt een serverfunctie om de tank bij een depot te legen. Opslag wordt pas in stap 7 toegevoegd. Er worden nu geen productiespelgegevens geschreven.
+The cloud cannot complete this matrix. No claim of Roblox runtime readiness is made by a successful build. Art is procedural; the final starship is a ground sweeper, the leaderboard is server-local, achievements are career UI milestones, and paid products/global boards/direct-invite APIs are not configured. Treat this build as an alpha requiring the acceptance tests before public release.

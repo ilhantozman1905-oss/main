@@ -8,7 +8,8 @@ function Effects.new(config)
     local sound = Instance.new("Sound")
     sound.Name = "MoonBrushing"
     sound.SoundId = config.Audio.BrushSoundId
-    sound.Volume, sound.Looped = 0.25, true
+    sound.Volume, sound.Looped = 0.16, true
+    sound.PlaybackSpeed = 1.7
     sound.Parent = workspace.CurrentCamera
     local self = {lastCollection = -math.huge}
     function self:collected(position)

@@ -1,27 +1,52 @@
-# Moon Scrubbers — stap 2
+# Moon Scrubbers — playable alpha 0.2
 
-Een Roblox/Luau-prototype van fysiek poetsen op de maan. Inbegrepen: first-person tandenborstel met handschoen, poetsanimatie, gedeeld stofraster, servervalidatie, stofdeeltjes richting rugtank, zichtbare rugtankmeter en HUD. Muis, touch en gamepad gebruiken dezelfde schoonmaakactie.
+A Roblox lunar cleaning tycoon: **scrub → return to your base → launch dust shipments → buy upgrades → unlock zones → automate and drive sweepers → prestige**. Built from the original Moon Scrubbers brief; this replaces the limited step-2 prototype.
 
-## Openen in Roblox Studio
+## Play in Roblox Studio
 
-Gebruik een **nieuwe lege test-place**. Verwijder de standaard Baseplate en SpawnLocation om overlappende grond en willekeurige spawnplaatsen te voorkomen. Importeer dit project via Rojo, of plaats de bestanden handmatig volgens [de Studio-handleiding](docs/STUDIO.md).
+Open **build/MoonScrubbers.rbxlx** with Studio's Open from File command, then press **Play / F5**. In the installation ZIP the place is at the ZIP root. The world, personal bases and UI are generated when Play starts; do not paste duplicate scripts into the place.
 
-Met Rojo 7: voer vanuit deze repository `rojo serve default.project.json` uit en verbind de Rojo-plugin in Studio. `rojo build default.project.json -o /tmp/moon-scrubbers.rbxlx` maakt een place-bestand zonder Studio. Rojo moet afzonderlijk geïnstalleerd zijn; de cloudcontrole installeert geen Studio.
+1. Click **START MY SHIFT**. Claim the free daily delivery if desired.
+2. Open **ZONES → Dusty Plains → TRAVEL**.
+3. Select **BRUSH** in the bottom bar (or equip the inventory tool). Look down, hold left mouse / R2 / the touch POETS button, and sweep your aim across nearby dust.
+4. Select **HOME**, then walk onto your own gold **SHIP DUST** pad, use its proximity prompt, or press **SELL** nearby. A rocket launches and you receive credits.
+5. Use **SHOP** at your base for better tools, suits and tank capacity. **BASE** upgrades your actual buildings.
+6. Unlock better **ZONES**, buy **ROBOTS**, and deploy **VEHICLES**. Claim missions and open earned **CAPSULES**. All progression uses earned credits.
 
-Druk op Play. De tandenborstel wordt automatisch uitgerust. Kijk naar de grond, houd de linkermuisknop, R2 of de mobiele POETS-knop vast en beweeg het richtpunt heen en weer. Alleen echte verplaatsing over bereikbaar stof levert stof op. Leeggepoetste cellen tonen de schone ondergrond.
+Press **M** (gamepad **Y**) to open menus while holding the brush; **H** returns home. The menu releases the first-person camera and cleaning input. The bottom navigation scrolls horizontally on small screens. Gamepad buttons are selectable; use Roblox's GUI selection control to enter navigation. Vehicles use standard Roblox vehicle inputs; jump to exit.
 
-## Afbakening
+## Included gameplay
 
-Dit is uitsluitend stap 2. Zwaartekracht, verkoop, geld, upgrades, lobby's, opslag, robots, voertuigen en capsules volgen na afzonderlijke goedkeuring. Stof en tanks bestaan alleen tijdens de serversessie. Een volle tank blijft vol; stop/start de testsessie om opnieuw te testen. De gridweergave vervaagt hele cellen; een doorlopende geschilderde texture-mask is een latere visuele verfijning. Het gereedschap en de handschoen zijn procedurele prototypevormen, geen definitieve assets.
+- Five distinct decorated work zones, a landing plaza, four personal bases, Earth and star backdrop, lunar gravity, first-person animated tools and physical dust backpacks.
+- Eight tools, four visible suit tiers, ten tank upgrades, five buildings with five upgrade levels each, sequential zone unlocks and rare 8×-value dust.
+- Personal shipping pads with automatic arrival sales, rocket launches, mixed-zone dust valuation, visible credit/tank HUD, and server-authoritative shops.
+- Four robot tiers, up to eight robots per owner, zone assignment, visible movement, automatic payout, and three-hour capped offline earnings at 15% active rate.
+- Six progressive ground-driven sweeper vehicles, separate storage, owner-validated driving, passenger seat, lunar physics and automatic depot unloading. The final ship-shaped sweeper is not a free-flight spacecraft.
+- Daily login streaks, daily/weekly collection missions, career achievements, capsule milestones, cosmetic album, duplicate fragments, crafting, disclosed odds, rare-or-better pity and cosmetic reveals.
+- Permanent prestige earnings bonuses, a recurring meteor-shower event, humorous idle radio messages, and a **current-server** earnings leaderboard.
+- Public/local play, published-experience Solo reserved servers, and Friends rooms using shareable expiring codes.
+- DataStore profiles with session leases, retries, autosave, leave/shutdown saving and explicit Studio fallback.
 
-Poetsgeluid is voorbereid, maar standaard stil: zet een toegestane audio-asset-ID (`rbxassetid://...`) in `Config.Audio.BrushSoundId`. Er is geen audio-asset meegeleverd. Stofdeeltjes gebruiken de ingebouwde Roblox-smoketextuur.
+## Save and server settings
 
-## Balans
+Local unpublished Studio sessions work without cloud access and clearly say **STUDIO: session only** if DataStore calls fail. To test persistence, publish a **separate test experience**, enable Studio API access in its security settings, and rejoin the same experience. Live servers never silently overwrite an unreadable profile with fresh progress.
 
-Het veld is 64 × 64 studs met 256 logische cellen, één grond-Part en maximaal 256 lokale UI-vlakken. Per cel is er 4 stof, totaal 1024. De tank bevat 50; het maximum is 6 stof/seconde tijdens geldige beweging, dus theoretisch circa 8,3 seconden om te vullen. Dit is bewust snel voor deze functietest. Voor de eerder voorgestelde 45–60 seconden zet je `DustPerSecond` op 1. Bereik: 10 studs; borstelstraal: 1,6 studs; maximaal 10 verzoeken/seconde; gebundelde wijzigingen elke 0,15 seconde.
+Set the place maximum to **4 players** in Roblox settings. The game also limits active crews to its four base slots. Teleport/MemoryStore room tests require a published experience and Roblox client; they do not run in ordinary Studio play. See [Studio acceptance tests](docs/STUDIO.md) and [Dutch installation guide](docs/INSTALLATIE-NL.md).
 
-De logische brush-footprint bepaalt welke cellen vervagen. De viewmodel-animatie is cosmetisch en bepaalt nooit de serveropbrengst. Samenwerkende spelers delen resterend stof; er is nog geen teamworkbonus. Deze kleine zone gebruikt een eenvoudige scan van 256 cellen per geldige actie; grotere zones moeten cellen binnen de brush-bounds direct indexeren en alleen nabijgelegen zones repliceren.
+## Development and checks
 
-## Controles
+`default.project.json` maps source to the correct Roblox services. Use Rojo 7.6.1:
 
-`tests/grid.spec.lua` test de werkelijke gedeelde rasterlogica met Lua 5.3+ of Fengari, vanuit de repositoryroot. De Studio-testmatrix, inclusief misbruiktests en multiplayer, staat in [docs/STUDIO.md](docs/STUDIO.md). Syntax- en rastertests vervangen geen Roblox-runtimecontrole. De cloudomgeving beschikt niet over Roblox Studio.
+```sh
+rojo serve default.project.json
+rojo build default.project.json -o /tmp/MoonScrubbers.rbxlx
+python3 tools/package.py --place /tmp/MoonScrubbers.rbxlx
+```
+
+The packager verifies every embedded script against `src`, archives replaced builds, creates both ZIPs, and validates their contents. `src/shared/GameRules.lua` is pure economy/progression logic; server services own all mutations. The shared `Grid.lua` handles dust conservation.
+
+[Validation results](docs/VALIDATION.md) distinguish executed tests from pending Roblox runtime checks. [Gameplay and balance](docs/GAMEPLAY.md) lists costs and progression. Custom audio can replace the built-in movement-sound brush foley in `Config.Audio.BrushSoundId`.
+
+## Release status
+
+This is a **playable alpha implementation**, not a claim of completed Studio QA or a published production game. The cloud machine has no Roblox engine. Geometry, characters and tool/vehicle shapes are procedural art. Premium purchases, paid random items, Roblox Badge IDs, global cross-server leaderboards, direct friend invites, seasonal content and custom music are not enabled. No Robux products or paid boosts are required for any implemented progression.

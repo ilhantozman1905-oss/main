@@ -1,112 +1,108 @@
---!strict
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local Cleaning = {}
-
-function Cleaning.start(config, root, input, viewmodel, ui, effects)
-    local player = Players.LocalPlayer
-    local c = config.Cleaning
-    local remotes = root:WaitForChild("Remotes")
-    local floor = workspace:WaitForChild("MoonScrubbersPrototype"):WaitForChild("CleanSurface")
-    local surface = Instance.new("SurfaceGui")
-    surface.Name, surface.Face, surface.Adornee = "LocalDustGrid", Enum.NormalId.Top, floor
-    surface.CanvasSize = Vector2.new(c.Columns * 32, c.Rows * 32)
-    surface.LightInfluence, surface.AlwaysOnTop = 1, false
-    surface.Parent = player:WaitForChild("PlayerGui")
-    local frames = {}
-    for row = 1, c.Rows do
-        for column = 1, c.Columns do
-            local id = (row - 1) * c.Columns + column
-            local frame = Instance.new("Frame")
-            frame.Size = UDim2.fromScale(1 / c.Columns, 1 / c.Rows)
-            frame.Position = UDim2.fromScale((column - 1) / c.Columns, (row - 1) / c.Rows)
-            frame.BorderSizePixel = 0
-            frame.BackgroundColor3 = Color3.fromRGB(166, 151, 123)
-            frame.Parent = surface
-            frames[id] = frame
+--!nonstrict
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local Cleaning={}
+function Cleaning.start(config,root,input,viewmodel,ui,effects)
+    local player=Players.LocalPlayer; local remotes=root:WaitForChild("Remotes"); local c=config.Cleaning
+    local world=workspace:WaitForChild("MoonWorld")
+    local floors,frames,surfaces={},{},{}
+    for _,part in ipairs(world:GetDescendants()) do
+        if part:IsA("BasePart") and part:GetAttribute("ZoneId") then floors[part:GetAttribute("ZoneId")]=part end
+    end
+    -- The server creates geometry before Ready; wait for all streamed/replicated fields.
+    while #floors<#config.Zones do
+        task.wait(0.1)
+        for _,part in ipairs(world:GetDescendants()) do
+            if part:IsA("BasePart") and part:GetAttribute("ZoneId") then floors[part:GetAttribute("ZoneId")]=part end
         end
     end
-    local function apply(cells, progress)
-        for id, remaining in pairs(cells) do
-            if frames[id] then frames[id].BackgroundTransparency = 1 - remaining / c.DustPerCell end
-        end
-        ui:setProgress(progress)
+    for id,floor in ipairs(floors) do
+        local surface=Instance.new("SurfaceGui"); surface.Name="LocalDustGrid"..id
+        surface.Face=Enum.NormalId.Top; surface.Adornee=floor; surface.CanvasSize=Vector2.new(c.Columns*24,c.Rows*24)
+        surface.LightInfluence=0.5; surface.Parent=player.PlayerGui; frames[id]={}; surfaces[id]=surface
+        for row=1,c.Rows do for column=1,c.Columns do
+            local cell=(row-1)*c.Columns+column; local frame=Instance.new("Frame")
+            frame.Size=UDim2.fromScale(1/c.Columns,1/c.Rows)
+            frame.Position=UDim2.fromScale((column-1)/c.Columns,(row-1)/c.Rows)
+            frame.BorderSizePixel=0
+            local rgb=config.Zones[id].Color; frame.BackgroundColor3=Color3.fromRGB(rgb[1],rgb[2],rgb[3])
+            frame.Parent=surface; frames[id][cell]=frame
+        end end
     end
-    -- Connect before requesting a snapshot; buffer deltas while the request is in flight.
-    local ready, queued, revision = false, {}, -1
-    remotes.CellsChanged.OnClientEvent:Connect(function(cells, progress, incomingRevision)
-        if not ready then table.insert(queued, {cells, progress, incomingRevision}); return end
-        if incomingRevision <= revision then return end
-        revision = incomingRevision
-        apply(cells, progress)
+    local ready,queue,revision=false,{},-1
+    local progress={}
+    local function apply(zones,percent)
+        for zoneKey,cells in pairs(zones) do local id=tonumber(zoneKey)
+            for cellKey,left in pairs(cells) do local cell=tonumber(cellKey)
+            if frames[id] and frames[id][cell] then frames[id][cell].BackgroundTransparency=1-left/c.DustPerCell end
+        end end
+        for id,value in pairs(percent or {}) do progress[tonumber(id)]=value end
+    end
+    remotes.CellsChanged.OnClientEvent:Connect(function(zones,percent,incoming)
+        if not ready then table.insert(queue,{zones,percent,incoming}); return end
+        if incoming<=revision then return end
+        revision=incoming; apply(zones,percent)
     end)
-    local snapshot = remotes.Snapshot:InvokeServer()
-    assert(snapshot, "Initial dust snapshot unavailable")
-    revision = snapshot.revision
-    apply(snapshot.cells, snapshot.progress)
-    for _, delta in ipairs(queued) do
-        if delta[3] > revision then
-            revision = delta[3]
-            apply(delta[1], delta[2])
+    local snapshot=remotes.Snapshot:InvokeServer()
+    if not snapshot then task.wait(1.1); snapshot=remotes.Snapshot:InvokeServer() end
+    assert(snapshot,"Server profile not ready; please rejoin")
+    revision=snapshot.Revision
+    for id,z in ipairs(snapshot.Zones) do
+        apply({[id]=z.Cells})
+        local remaining=0
+        for cell,left in ipairs(z.Cells) do
+            remaining=remaining+left
+            if z.Rare[cell] then frames[id][cell].BackgroundColor3=Color3.fromRGB(255,204,93) end
         end
+        progress[id]=1-remaining/(c.Columns*c.Rows*c.DustPerCell)
     end
-    ready = true
+    for _,delta in ipairs(queue) do if delta[3]>revision then revision=delta[3]; apply(delta[1],delta[2]) end end
+    ready=true; ui:setState(snapshot.State)
     remotes.Collected.OnClientEvent:Connect(function(position) effects:collected(position) end)
-
-    local equipped, previousMode, previousMin, previousMax = false, nil, nil, nil
+    local equipped=false; local oldMode,oldMin,oldMax
     local function setEquipped(enabled)
-        if equipped == enabled then return end
-        equipped = enabled
+        if equipped==enabled then return end
+        equipped=enabled
         if enabled then
-            previousMode = player.CameraMode
-            previousMin, previousMax = player.CameraMinZoomDistance, player.CameraMaxZoomDistance
-            player.CameraMode = Enum.CameraMode.LockFirstPerson
-            player.CameraMinZoomDistance, player.CameraMaxZoomDistance = 0.5, 0.5
+            oldMode=player.CameraMode; oldMin=player.CameraMinZoomDistance; oldMax=player.CameraMaxZoomDistance
+            player.CameraMode=Enum.CameraMode.LockFirstPerson
+            player.CameraMinZoomDistance=0.5; player.CameraMaxZoomDistance=0.5
         else
-            player.CameraMode = previousMode or Enum.CameraMode.Classic
-            player.CameraMaxZoomDistance = previousMax or 128
-            player.CameraMinZoomDistance = previousMin or 0.5
+            player.CameraMode=oldMode or Enum.CameraMode.Classic
+            player.CameraMaxZoomDistance=oldMax or 128; player.CameraMinZoomDistance=oldMin or 0.5
         end
-        input:setEnabled(enabled)
-        ui.enabled = enabled
-        ui:update()
+        input:setEnabled(enabled); ui.Enabled=enabled; ui:updateHud()
     end
-    local characterConnections = {}
-    local function onCharacter(character)
-        setEquipped(false)
-        for _, connection in ipairs(characterConnections) do connection:Disconnect() end
-        characterConnections = {}
-        local function refresh()
-            local tool = character:FindFirstChild("LSD Toothbrush")
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            setEquipped(tool ~= nil and humanoid ~= nil and humanoid.Health > 0)
-        end
-        table.insert(characterConnections, character.ChildAdded:Connect(refresh))
-        table.insert(characterConnections, character.ChildRemoved:Connect(refresh))
-        local humanoid = character:WaitForChild("Humanoid")
-        table.insert(characterConnections, humanoid.Died:Connect(function() setEquipped(false) end))
-        refresh()
-    end
-    player.CharacterAdded:Connect(onCharacter)
-    player.CharacterRemoving:Connect(function() setEquipped(false) end)
-    if player.Character then task.spawn(onCharacter, player.Character) end
-    local rayParams = RaycastParams.new()
-    rayParams.FilterType = Enum.RaycastFilterType.Include
-    rayParams.FilterDescendantsInstances = {floor}
-    local lastSent = 0
-    RunService:BindToRenderStep("MoonBrush", Enum.RenderPriority.Camera.Value + 1, function()
-        local camera = workspace.CurrentCamera
-        if not camera then return end
-        local active = equipped and input.held
-        viewmodel:update(camera, equipped, active, os.clock())
+    local rayParams=RaycastParams.new(); rayParams.FilterType=Enum.RaycastFilterType.Include; rayParams.FilterDescendantsInstances=floors
+    local lastSent,lastDrive,lastProgress=0,0,0
+    RunService:BindToRenderStep("MoonBrush",Enum.RenderPriority.Camera.Value+1,function()
+        local camera=workspace.CurrentCamera; if not camera then return end
+        local char=player.Character; local hum=char and char:FindFirstChildOfClass("Humanoid")
+        local tool=char and char:FindFirstChildOfClass("Tool")
+        local enabled=tool~=nil and tool:GetAttribute("MoonTool")==true and hum~=nil and hum.Health>0 and hum.SeatPart==nil and not ui.Modal
+        setEquipped(enabled)
+        if tool then local brush=tool:FindFirstChild("WorldBrush"); if brush then brush.LocalTransparencyModifier=enabled and 1 or 0 end end
+        local helmet=char and char:FindFirstChild("EVAHelmet"); if helmet then helmet.LocalTransparencyModifier=enabled and 1 or 0 end
+        local active=enabled and input.held
+        local tier=player:GetAttribute("ToolTier") or 1
+        viewmodel:update(camera,enabled,active,os.clock(),tier)
         effects:update(active)
-        if not active or os.clock() - lastSent < 1 / c.RequestsPerSecond then return end
-        lastSent = os.clock()
-        local size = camera.ViewportSize
-        local ray = camera:ViewportPointToRay(size.X / 2, size.Y / 2)
-        local hit = workspace:Raycast(ray.Origin, ray.Direction * c.MaxReach, rayParams)
+        if hum and hum.SeatPart and hum.SeatPart:IsA("VehicleSeat") and os.clock()-lastDrive>0.1 then
+            lastDrive=os.clock()
+            remotes.Drive:FireServer(ui.Modal and Vector2.zero or Vector2.new(hum.SeatPart.SteerFloat,hum.SeatPart.ThrottleFloat))
+        end
+        if os.clock()-lastProgress>0.5 and char and char:FindFirstChild("HumanoidRootPart") then
+            lastProgress=os.clock(); local point=char.HumanoidRootPart.Position
+            for id,z in ipairs(config.Zones) do
+                surfaces[id].Enabled=(point-Vector3.new(z.X,0,z.Z)).Magnitude<125
+                if math.abs(point.X-z.X)<42 and math.abs(point.Z-z.Z)<42 then ui:setProgress(progress[id] or 0,z.Name) end
+            end
+        end
+        if not active or os.clock()-lastSent<1/c.RequestsPerSecond then return end
+        lastSent=os.clock()
+        local size=camera.ViewportSize; local ray=camera:ViewportPointToRay(size.X/2,size.Y/2)
+        local hit=workspace:Raycast(ray.Origin,ray.Direction*config.Tools[tier].Reach,rayParams)
         if hit then remotes.Scrub:FireServer(hit.Position) end
     end)
 end
-
 return Cleaning

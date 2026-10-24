@@ -1,0 +1,1653 @@
+<roblox version="4">
+  <Item class="ReplicatedStorage" referent="0">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="1">
+      <Properties>
+        <string name="Name">MoonScrubbers</string>
+      </Properties>
+      <Item class="Folder" referent="2">
+        <Properties>
+          <string name="Name">Shared</string>
+        </Properties>
+        <Item class="ModuleScript" referent="3">
+          <Properties>
+            <string name="Name">Config</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local Config = {
+    Version = "0.2.0-playable-alpha", MaxPlayers = 4, Gravity = 32.7,
+    Cleaning = {CellSize=4, Columns=20, Rows=20, DustPerCell=6, RequestsPerSecond=10,
+        ReplicationInterval=0.15, MinStrokeDistance=0.08, MaxStrokeDistance=9, RespawnSeconds=100},
+    Audio = {BrushSoundId="rbxasset://sounds/action_footsteps_plastic.mp3"},
+    Tools = {
+        {Name="Toothbrush",Cost=0,Rate=5,Radius=1.6,Reach=11},
+        {Name="Paintbrush",Cost=100,Rate=9,Radius=2,Reach=12},
+        {Name="Hand Brush",Cost=400,Rate=16,Radius=3,Reach=13},
+        {Name="Broom",Cost=1400,Rate=28,Radius=4,Reach=14},
+        {Name="Lunar Mop",Cost=4200,Rate=45,Radius=5,Reach=15},
+        {Name="Handheld Vacuum",Cost=12000,Rate=70,Radius=6,Reach=18},
+        {Name="Leaf Blower",Cost=32000,Rate=110,Radius=8,Reach=22},
+        {Name="Laser Vacuum",Cost=85000,Rate=180,Radius=10,Reach=26},
+    },
+    Suits = {
+        {Name="Budget EVA",Cost=0,Speed=17,Capacity=1,Bonus=1,Color={225,230,235}},
+        {Name="Reinforced",Cost=600,Speed=19,Capacity=1.5,Bonus=1.1,Color={240,175,75}},
+        {Name="LSD Professional",Cost=4500,Speed=22,Capacity=2,Bonus=1.25,Color={75,200,190}},
+        {Name="Quantum EVA",Cost=25000,Speed=26,Capacity=3,Bonus=1.5,Color={170,120,250}},
+    },
+    Zones = {
+        {Name="Dusty Plains",X=0,Z=110,Cost=0,Suit=1,Value=1,Color={160,148,125}},
+        {Name="Impact Craters",X=130,Z=110,Cost=1400,Suit=2,Value=3,Color={178,128,90}},
+        {Name="Dark Side",X=-130,Z=110,Cost=6500,Suit=2,Value=7,Color={100,100,150}},
+        {Name="Abandoned Outpost",X=130,Z=245,Cost=24000,Suit=3,Value=15,Color={95,153,156}},
+        {Name="Crystal Caverns",X=-130,Z=245,Cost=70000,Suit=4,Value=35,Color={157,101,196}},
+    },
+    Robots = {
+        {Name="Dusty McDustface",Cost=900,Rate=1.2},
+        {Name="Union Rep 3000",Cost=4000,Rate=4},
+        {Name="Overqualified Bot",Cost=14000,Rate=12},
+        {Name="Vacuum Drone",Cost=45000,Rate=30},
+    },
+    Vehicles = {
+        {Name="Cleaning Cart",Cost=2500,Speed=25,Capacity=200,Radius=4,Rate=20},
+        {Name="Cleaning Tractor",Cost=9000,Speed=30,Capacity=500,Radius=6,Rate=45},
+        {Name="Street Sweeper",Cost=24000,Speed=34,Capacity=1200,Radius=8,Rate=85},
+        {Name="Lunar Buggy",Cost=55000,Speed=45,Capacity=2200,Radius=10,Rate=130},
+        {Name="Heavy Scrubber",Cost=120000,Speed=30,Capacity=5000,Radius=13,Rate=220},
+        {Name="Cleaning Starship",Cost=300000,Speed=55,Capacity=10000,Radius=18,Rate=400},
+    },
+    Buildings = {
+        {Id="Depot",Name="Shipping Depot",Cost=250},
+        {Id="Workshop",Name="Workshop",Cost=400},
+        {Id="Garage",Name="Garage",Cost=500},
+        {Id="HQ",Name="Crew Headquarters",Cost=350},
+        {Id="Radio",Name="Radio Tower",Cost=300},
+    },
+    Rarities = {
+        {Name="Common",Weight=60,Color={180,190,205}},
+        {Name="Rare",Weight=25,Color={70,165,255}},
+        {Name="Epic",Weight=10,Color={180,100,245}},
+        {Name="Legendary",Weight=4,Color={255,188,65}},
+        {Name="Mythic",Weight=1,Color={255,85,135}},
+    },
+    CapsuleCost=350, Pity=20, PrestigeCost=250000, OfflineLimit=10800,
+}
+return Config
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="4">
+          <Properties>
+            <string name="Name">GameRules</string>
+            <string name="Source"><![CDATA[--!nonstrict
+-- Pure progression; mutations are invoked by the server, never by the UI.
+local Rules = {}
+function Rules.clone(value)
+    if type(value)~="table" then return value end
+    local out={}; for k,v in pairs(value) do out[k]=Rules.clone(v) end; return out
+end
+function Rules.new(now)
+    return {Schema=2,Cash=0,Dust=0,TankValue=0,Tool=1,Suit=1,Tank=0,Zone=1,
+        Robots={},RobotZone=1,RobotDust=0,RobotValue=0,Vehicle=0,VehicleDust=0,VehicleValue=0,
+        Prestige=0,Buildings={Depot=0,Workshop=0,Garage=0,HQ=0,Radio=0},
+        Capsules=1,Pity=0,Fragments=0,Cosmetics={},Equipped=0,
+        TotalCleaned=0,TotalEarned=0,Shipments=0,CapsuleMilestone=0,
+        LastSeen=now,LoginDay=-1,Streak=0,DailyDay=-1,WeeklyWeek=-1,
+        DailyClean=0,WeeklyClean=0,DailyClaimed=false,WeeklyClaimed=false,Tutorial=1}
+end
+function Rules.normalize(saved,now,c)
+    local p=Rules.new(now)
+    if type(saved)=="table" then
+        for key,default in pairs(p) do
+            if type(saved[key])==type(default) then p[key]=Rules.clone(saved[key]) end
+        end
+    end
+    for key,value in pairs(p) do
+        if type(value)=="number" and (value~=value or math.abs(value)==math.huge) then p[key]=0 end
+    end
+    local function level(key,low,high) p[key]=math.max(low,math.min(high,math.floor(p[key]))) end
+    level("Tool",1,#c.Tools); level("Suit",1,#c.Suits); level("Zone",1,#c.Zones)
+    level("Vehicle",0,#c.Vehicles); level("Tank",0,10); level("Prestige",0,1000)
+    for _,b in ipairs(c.Buildings) do
+        p.Buildings[b.Id]=math.max(0,math.min(5,math.floor(tonumber(p.Buildings[b.Id]) or 0)))
+    end
+    local robots={}
+    for _,tier in ipairs(p.Robots) do
+        if type(tier)=="number" and tier%1==0 and c.Robots[tier] and #robots<8 then table.insert(robots,tier) end
+    end
+    p.Robots=robots; p.RobotZone=math.max(1,math.min(p.Zone,math.floor(p.RobotZone)))
+    p.Cash=math.max(0,p.Cash); p.Schema=2
+    return p
+end
+function Rules.capacity(p,c) return math.floor(50*1.8^p.Tank*c.Suits[p.Suit].Capacity) end
+function Rules.multiplier(p,c) return c.Suits[p.Suit].Bonus*(1+p.Prestige*0.25)*(1+p.Buildings.HQ*0.05) end
+function Rules.periods(p,now)
+    local day,week=math.floor(now/86400),math.floor(now/604800)
+    if p.DailyDay~=day then p.DailyDay=day; p.DailyClean=0; p.DailyClaimed=false end
+    if p.WeeklyWeek~=week then p.WeeklyWeek=week; p.WeeklyClean=0; p.WeeklyClaimed=false end
+end
+function Rules.record(p,amount,now)
+    Rules.periods(p,now)
+    p.TotalCleaned=p.TotalCleaned+amount; p.DailyClean=p.DailyClean+amount; p.WeeklyClean=p.WeeklyClean+amount
+    local milestone=math.floor(p.TotalCleaned/500)
+    if milestone>p.CapsuleMilestone then p.Capsules=p.Capsules+milestone-p.CapsuleMilestone; p.CapsuleMilestone=milestone end
+end
+function Rules.credit(p,amount)
+    amount=math.max(0,math.floor(amount+0.5)); p.Cash=p.Cash+amount; p.TotalEarned=p.TotalEarned+amount
+    return amount
+end
+function Rules.sell(p,c)
+    if p.Dust+p.VehicleDust<=0 then return false,"Your tanks are empty. Go make a tiny difference." end
+    local value=(p.TankValue+p.VehicleValue)*Rules.multiplier(p,c)*(1+p.Buildings.Depot*0.1)
+    p.Dust=0; p.TankValue=0; p.VehicleDust=0; p.VehicleValue=0; p.Shipments=p.Shipments+1
+    p.Tutorial=math.max(p.Tutorial,3)
+    return true,Rules.credit(p,value)
+end
+function Rules.offer(p,c,kind,index)
+    if kind=="Tool" then local v=c.Tools[p.Tool+1]; return v and v.Cost,v and v.Name
+    elseif kind=="Suit" then local v=c.Suits[p.Suit+1]; return v and v.Cost,v and v.Name
+    elseif kind=="Tank" then return p.Tank<10 and math.floor(80*2.25^p.Tank) or nil,"Tank capacity"
+    elseif kind=="Zone" then local v=c.Zones[p.Zone+1]; return v and v.Cost,v and v.Name
+    elseif kind=="Vehicle" then local v=c.Vehicles[p.Vehicle+1]; return v and v.Cost,v and v.Name
+    elseif kind=="Robot" then local v=c.Robots[index]; return #p.Robots<8 and v and v.Cost or nil,v and v.Name
+    elseif kind=="Capsule" then return c.CapsuleCost,"Delivery capsule" end
+    for _,b in ipairs(c.Buildings) do
+        if kind==b.Id then return p.Buildings[b.Id]<5 and math.floor(b.Cost*2.5^p.Buildings[b.Id]) or nil,b.Name end
+    end
+    return nil,nil
+end
+function Rules.purchase(p,c,kind,index)
+    local price,name=Rules.offer(p,c,kind,index)
+    if not price then return false,"Already maxed out or unavailable." end
+    if kind=="Zone" and p.Suit<c.Zones[p.Zone+1].Suit then return false,"Upgrade your suit first." end
+    if kind=="Robot" and index>p.Buildings.Radio+1 then return false,"Upgrade your radio tower to unlock this robot." end
+    if p.Cash<price then return false,"Not enough credits. Ship more dust!" end
+    p.Cash=p.Cash-price
+    if kind=="Robot" then table.insert(p.Robots,index)
+    elseif kind=="Capsule" then p.Capsules=p.Capsules+1
+    elseif p.Buildings[kind]~=nil then p.Buildings[kind]=p.Buildings[kind]+1
+    else p[kind]=p[kind]+1 end
+    p.Tutorial=math.max(p.Tutorial,4)
+    return true,name
+end
+function Rules.daily(p,now)
+    local day=math.floor(now/86400)
+    if p.LoginDay==day then return false,"Daily delivery already collected." end
+    p.Streak=p.LoginDay==day-1 and p.Streak+1 or 1; p.LoginDay=day; p.Capsules=p.Capsules+1
+    return true,Rules.credit(p,100+math.min(p.Streak,7)*50)
+end
+function Rules.mission(p,now,weekly)
+    Rules.periods(p,now)
+    local count=weekly and p.WeeklyClean or p.DailyClean
+    local claimed=weekly and p.WeeklyClaimed or p.DailyClaimed
+    if claimed or count<(weekly and 2000 or 250) then return false,"Mission not ready to claim." end
+    if weekly then p.WeeklyClaimed=true else p.DailyClaimed=true end
+    p.Capsules=p.Capsules+(weekly and 3 or 1)
+    return true,Rules.credit(p,weekly and 3000 or 400)
+end
+function Rules.open(p,c,roll)
+    if p.Capsules<1 then return false,"No capsules. Earn more through cleaning, missions or daily rewards." end
+    if type(roll)~="number" or roll~=roll or roll<0 or roll>=1 then return false,"Invalid roll" end
+    p.Capsules=p.Capsules-1
+    local forced=p.Pity>=c.Pity-1
+    local cursor=roll*(forced and 40 or 100)
+    local rarity=forced and 2 or 1
+    for id,r in ipairs(c.Rarities) do
+        if not forced or id>1 then cursor=cursor-r.Weight; if cursor<0 then rarity=id; break end end
+    end
+    p.Pity=rarity>=2 and 0 or p.Pity+1
+    local id=tostring(rarity); local duplicate=p.Cosmetics[id]==true
+    if duplicate then p.Fragments=p.Fragments+rarity*10 else p.Cosmetics[id]=true; p.Equipped=rarity end
+    return true,{Rarity=rarity,Duplicate=duplicate,Name=c.Rarities[rarity].Name.." EVA finish"}
+end
+function Rules.offline(p,c,now)
+    local seconds=math.max(0,math.min(c.OfflineLimit,now-p.LastSeen)); local rate=0
+    for _,tier in ipairs(p.Robots) do rate=rate+c.Robots[tier].Rate end
+    p.LastSeen=now
+    return Rules.credit(p,seconds*rate*c.Zones[p.RobotZone].Value*0.15)
+end
+function Rules.prestige(p,c,now)
+    if p.Cash<c.PrestigeCost then return false,"Prestige requires 250,000 unspent credits." end
+    local fresh=Rules.new(now)
+    fresh.Prestige=p.Prestige+1; fresh.Cosmetics=Rules.clone(p.Cosmetics); fresh.Equipped=p.Equipped
+    fresh.Fragments=p.Fragments; fresh.Capsules=p.Capsules; fresh.TotalEarned=p.TotalEarned
+    fresh.LoginDay=p.LoginDay; fresh.Streak=p.Streak
+    for key in pairs(p) do p[key]=nil end
+    for key,value in pairs(fresh) do p[key]=value end
+    return true,"Rehired! Permanent earnings bonus increased by 25%."
+end
+return Rules
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="5">
+          <Properties>
+            <string name="Name">Grid</string>
+            <string name="Source"><![CDATA[--!strict
+-- Pure grid math. No Parts, networking, or Roblox services.
+local Grid = {}
+
+function Grid.index(column, row, columns)
+    return (row - 1) * columns + column
+end
+
+function Grid.cellAt(x, z, cellSize, columns, rows)
+    local column = math.floor((x + columns * cellSize / 2) / cellSize) + 1
+    local row = math.floor((z + rows * cellSize / 2) / cellSize) + 1
+    if column < 1 or column > columns or row < 1 or row > rows then return nil end
+    return Grid.index(column, row, columns)
+end
+
+function Grid.cellsWithin(x, z, radius, cellSize, columns, rows)
+    local result = {}
+    for row = 1, rows do
+        for column = 1, columns do
+            local left = (column - 1) * cellSize - columns * cellSize / 2
+            local top = (row - 1) * cellSize - rows * cellSize / 2
+            local nearestX = math.max(left, math.min(x, left + cellSize))
+            local nearestZ = math.max(top, math.min(z, top + cellSize))
+            if (nearestX - x)^2 + (nearestZ - z)^2 <= radius^2 then
+                table.insert(result, Grid.index(column, row, columns))
+            end
+        end
+    end
+    return result
+end
+
+function Grid.collect(cells, ids, budget, tank, capacity)
+    local remaining = math.max(0, math.min(budget, capacity - tank))
+    local collected, changes = 0, {}
+    for _, id in ipairs(ids) do
+        local available = cells[id] or 0
+        local amount = math.min(available, remaining)
+        if amount > 0 then
+            cells[id] = available - amount
+            changes[id] = cells[id]
+            remaining = remaining - amount
+            collected = collected + amount
+        end
+        if remaining <= 0 then break end
+    end
+    return collected, changes
+end
+
+function Grid.finiteVector(x, y, z)
+    for _, value in ipairs({x, y, z}) do
+        if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then
+            return false
+        end
+    end
+    return true
+end
+
+return Grid
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="6">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="7">
+      <Properties>
+        <string name="Name">MoonScrubbers</string>
+      </Properties>
+      <Item class="Script" referent="8">
+        <Properties>
+          <string name="Name">Bootstrap</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[--!nonstrict
+local RS=game:GetService("ReplicatedStorage")
+local root=RS:WaitForChild("MoonScrubbers")
+local config=require(root.Shared.Config)
+local folder=Instance.new("Folder"); folder.Name="Remotes"; folder.Parent=root
+local remotes={}
+for _,name in ipairs({"Scrub","Collected","CellsChanged","Action","State","Notice","Capsule","OpenPanel","Drive","Lobby","RoomCode","Event"}) do
+    local event=Instance.new("RemoteEvent"); event.Name=name; event.Parent=folder; remotes[name]=event
+end
+local snapshot=Instance.new("RemoteFunction"); snapshot.Name="Snapshot"; snapshot.Parent=folder; remotes.Snapshot=snapshot
+local world=require(script.Parent.Services.WorldService).start(config)
+local service=require(script.Parent.Services.GameService).new(config,world,remotes)
+service:start(); root:SetAttribute("Ready",true)
+print("[Moon Scrubbers] "..config.Version.." — clean, ship, upgrade, explore!")
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Folder" referent="9">
+        <Properties>
+          <string name="Name">Services</string>
+        </Properties>
+        <Item class="ModuleScript" referent="10">
+          <Properties>
+            <string name="Name">CleaningService</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local Grid=require(game.ReplicatedStorage.MoonScrubbers.Shared.Grid)
+local Cleaning={}
+function Cleaning.new(gameService)
+    local self=setmetatable({Game=gameService,Zones={},Sessions={},Dirty={},Revision=0},{__index=Cleaning})
+    local c=gameService.Config.Cleaning
+    local random=Random.new()
+    for id,zone in ipairs(gameService.World.Zones) do
+        local cells,rare={},{}
+        for cell=1,c.Columns*c.Rows do cells[cell]=c.DustPerCell; rare[cell]=random:NextNumber()<0.015 end
+        self.Zones[id]={Cells=cells,Rare=rare,Floor=zone.Floor,CleanedAt={}}
+    end
+    return self
+end
+function Cleaning:snapshot()
+    local zones={}
+    for id,z in ipairs(self.Zones) do zones[id]={Cells=table.clone(z.Cells),Rare=z.Rare} end
+    return {Zones=zones,Revision=self.Revision}
+end
+function Cleaning:progress(id)
+    local remaining=0; for _,v in ipairs(self.Zones[id].Cells) do remaining=remaining+v end
+    local c=self.Game.Config.Cleaning
+    return 1-remaining/(c.Columns*c.Rows*c.DustPerCell)
+end
+function Cleaning:take(player,zoneId,position,radius,budget,kind)
+    local gameService=self.Game; local p=gameService.Profiles[player]; local z=self.Zones[zoneId]
+    if not p or not z or zoneId>p.Zone then return 0 end
+    local c=gameService.Config.Cleaning
+    local point=z.Floor.CFrame:PointToObjectSpace(position)
+    if not Grid.cellAt(point.X,point.Z,c.CellSize,c.Columns,c.Rows) then return 0 end
+    local capacity,stored
+    if kind=="Robot" then capacity=50+#p.Robots*30+p.Buildings.Depot*50; stored=p.RobotDust
+    elseif kind=="Vehicle" then capacity=gameService.Config.Vehicles[p.Vehicle].Capacity; stored=p.VehicleDust
+    else capacity=gameService.Rules.capacity(p,gameService.Config); stored=p.Dust end
+    local ids=Grid.cellsWithin(point.X,point.Z,radius,c.CellSize,c.Columns,c.Rows)
+    local before={}
+    for _,cell in ipairs(ids) do before[cell]=z.Cells[cell] end
+    local amount,changes=Grid.collect(z.Cells,ids,budget,stored,capacity)
+    if amount<=0 then return 0 end
+    local value=0
+    for cell,left in pairs(changes) do
+        -- Value exactly the dust removed, preserving mixed normal/rare cell values.
+        local prior=before[cell]
+        value=value+math.max(0,prior-left)*(z.Rare[cell] and 8 or 1)
+        z.CleanedAt[cell]=os.clock()
+    end
+    value=value*gameService.Config.Zones[zoneId].Value*gameService.EventMultiplier
+    if kind=="Robot" then p.RobotDust=p.RobotDust+amount; p.RobotValue=p.RobotValue+value
+    elseif kind=="Vehicle" then p.VehicleDust=p.VehicleDust+amount; p.VehicleValue=p.VehicleValue+value
+    else
+        local nearby=0
+        for other in pairs(gameService.Profiles) do
+            if other~=player and other.Character and other.Character:FindFirstChild("HumanoidRootPart") then
+                if (other.Character.HumanoidRootPart.Position-position).Magnitude<25 then nearby=nearby+1 end
+            end
+        end
+        p.Dust=p.Dust+amount; p.TankValue=p.TankValue+value*(1+math.min(0.15,nearby*0.05))
+        p.Tutorial=math.max(p.Tutorial,2)
+        gameService.Remotes.Collected:FireClient(player,position,amount)
+    end
+    gameService.Rules.record(p,amount,os.time())
+    self.Revision=self.Revision+1
+    self.Dirty[zoneId]=self.Dirty[zoneId] or {}
+    for cell,left in pairs(changes) do self.Dirty[zoneId][cell]=left end
+    gameService:attributes(player)
+    return amount
+end
+function Cleaning:scrub(player,target)
+    local g=self.Game; local p=g.Profiles[player]; if not p then return end
+    local now=os.clock(); local s=self.Sessions[player] or {}; self.Sessions[player]=s
+    if s.Request and now-s.Request<0.09 then return end
+    s.Request=now
+    if typeof(target)~="Vector3" or not Grid.finiteVector(target.X,target.Y,target.Z) then return end
+    local char=player.Character; local hum=char and char:FindFirstChildOfClass("Humanoid")
+    local head=char and char:FindFirstChild("Head"); local tool=char and char:FindFirstChildOfClass("Tool")
+    if not hum or hum.Health<=0 or hum.SeatPart or not head or not tool or not tool:GetAttribute("MoonTool") then return end
+    local stats=g.Config.Tools[p.Tool]; local direction=target-head.Position
+    if direction.Magnitude<0.01 or direction.Magnitude>stats.Reach then return end
+    local params=RaycastParams.new(); params.FilterType=Enum.RaycastFilterType.Exclude; params.FilterDescendantsInstances={char}
+    local hit=workspace:Raycast(head.Position,direction.Unit*(direction.Magnitude+0.25),params)
+    local zoneId=hit and hit.Instance:GetAttribute("ZoneId")
+    if not zoneId or zoneId>p.Zone or (hit.Position-target).Magnitude>0.6 or hit.Normal.Y<0.8 then return end
+    local last,at=s.Target,s.At; s.Target=target; s.At=now; g.LastActive[player]=now
+    if not last or now-at>0.5 then return end
+    local distance=(target-last).Magnitude
+    if distance<g.Config.Cleaning.MinStrokeDistance or distance>g.Config.Cleaning.MaxStrokeDistance then return end
+    self:take(player,zoneId,hit.Position,stats.Radius,stats.Rate*(1+p.Buildings.Workshop*0.08)*math.min(now-at,0.2),"Player")
+end
+function Cleaning:tick()
+    local c=self.Game.Config.Cleaning; local now=os.clock()
+    for id,z in ipairs(self.Zones) do
+        for cell,at in pairs(z.CleanedAt) do
+            if now-at>c.RespawnSeconds then
+                z.Cells[cell]=c.DustPerCell
+                z.CleanedAt[cell]=nil; self.Dirty[id]=self.Dirty[id] or {}; self.Dirty[id][cell]=c.DustPerCell
+                self.Revision=self.Revision+1
+            end
+        end
+    end
+    if next(self.Dirty) then
+        local progress={}; for id in pairs(self.Dirty) do progress[id]=self:progress(id) end
+        self.Game.Remotes.CellsChanged:FireAllClients(self.Dirty,progress,self.Revision); self.Dirty={}
+    end
+end
+return Cleaning
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="11">
+          <Properties>
+            <string name="Name">DataService</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local DSS=game:GetService("DataStoreService")
+local RunService=game:GetService("RunService")
+local HttpService=game:GetService("HttpService")
+local Rules=require(game.ReplicatedStorage.MoonScrubbers.Shared.GameRules)
+local Data={}
+function Data.new(config)
+    local ok,store=pcall(function() return DSS:GetDataStore("MoonScrubbers_Profiles_v2") end)
+    return setmetatable({Config=config,Store=ok and store or nil,
+        Token=game.JobId..HttpService:GenerateGUID(false),Sessions={},Saving={}}, {__index=Data})
+end
+function Data:load(player)
+    local key="player_"..player.UserId
+    local loaded,locked
+    for attempt=1,3 do
+        loaded=nil; locked=nil
+        local ok=pcall(function()
+            self.Store:UpdateAsync(key,function(old)
+                old=old or {}
+                if old.Lock and old.Lock.Token~=self.Token and old.Lock.Expires>os.time() then locked=true; return nil end
+                locked=false; loaded=Rules.normalize(old.Profile,os.time(),self.Config)
+                return {Profile=loaded,Lock={Token=self.Token,Expires=os.time()+180}}
+            end)
+        end)
+        if ok and loaded then self.Sessions[player]={Key=key,Memory=false}; return loaded,"Cloud saves active" end
+        if locked then return nil,"Your profile is open on another server. Wait a moment and rejoin." end
+        task.wait(attempt)
+    end
+    if RunService:IsStudio() then
+        self.Sessions[player]={Memory=true}
+        return Rules.new(os.time()),"STUDIO: session only; publish and enable API access for saving"
+    end
+    return nil,"Saving is unavailable. Rejoin shortly; your existing data has not been overwritten."
+end
+function Data:save(player,profile,release)
+    while self.Saving[player] do task.wait(0.1) end
+    local session=self.Sessions[player]
+    if not session then return false end
+    if session.Memory then if release then self.Sessions[player]=nil end; return true end
+    self.Saving[player]=true
+    profile.LastSeen=os.time()
+    local copy=Rules.clone(profile)
+    local success=false
+    for attempt=1,3 do
+        local wrote=false
+        local ok=pcall(function()
+            self.Store:UpdateAsync(session.Key,function(old)
+                if not old or not old.Lock or old.Lock.Token~=self.Token then wrote=false; return nil end
+                wrote=true
+                return {Profile=copy,Lock=not release and {Token=self.Token,Expires=os.time()+180} or nil}
+            end)
+        end)
+        if ok and wrote then success=true; break end
+        task.wait(attempt)
+    end
+    self.Saving[player]=nil
+    if release then self.Sessions[player]=nil end
+    return success
+end
+return Data
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="12">
+          <Properties>
+            <string name="Name">GameService</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local Players=game:GetService("Players")
+local ReplicatedStorage=game:GetService("ReplicatedStorage")
+local Rules=require(ReplicatedStorage.MoonScrubbers.Shared.GameRules)
+local State=require(script.Parent.PlayerStateService)
+local Game={}
+function Game.new(config,world,remotes)
+    local self=setmetatable({Config=config,World=world,Remotes=remotes,Rules=Rules,Profiles={},Bases={},
+        LastSale={},LastAction={},LastTravel={},LastActive={},LastSnapshot={},EventMultiplier=1,EventEnds=0,Random=Random.new()}, {__index=Game})
+    self.Data=require(script.Parent.DataService).new(config)
+    self.Cleaning=require(script.Parent.CleaningService).new(self)
+    self.Vehicles=require(script.Parent.VehicleService).new(self)
+    self.Lobby=require(script.Parent.LobbyService).new(self)
+    return self
+end
+function Game:notice(player,text) if player.Parent then self.Remotes.Notice:FireClient(player,text) end end
+function Game:attributes(player)
+    local p=self.Profiles[player]; if not p then return end
+    player:SetAttribute("Dust",p.Dust); player:SetAttribute("Cash",p.Cash)
+    player:SetAttribute("TankCapacity",Rules.capacity(p,self.Config)); player:SetAttribute("ToolTier",p.Tool)
+    player:SetAttribute("VehicleDust",p.VehicleDust); player:SetAttribute("CosmeticTier",p.Equipped)
+    State.apply(player,p,self.Config)
+    local stats=player:FindFirstChild("leaderstats")
+    if stats then stats.Credits.Value=math.floor(p.Cash); stats.Cleaned.Value=math.floor(p.TotalCleaned) end
+end
+function Game:public(player)
+    local p=self.Profiles[player]; if not p then return nil end
+    Rules.periods(p,os.time())
+    local state=Rules.clone(p)
+    state.SaveStatus=player:GetAttribute("SaveStatus"); state.Capacity=Rules.capacity(p,self.Config)
+    state.Event=self.EventMultiplier>1 and "METEOR SHOWER • 1.5x dust value" or "LSD shift in progress"
+    state.Session=game.PrivateServerId=="" and "Public crew" or "Private crew"
+    state.FriendCode=player:GetAttribute("FriendCode")
+    return state
+end
+function Game:publish(player)
+    self:attributes(player); self.Remotes.State:FireClient(player,self:public(player))
+end
+function Game:nearBase(player,distance)
+    local char=player.Character; local root=char and char:FindFirstChild("HumanoidRootPart")
+    local hum=char and char:FindFirstChildOfClass("Humanoid")
+    return root and hum and hum.Health>0 and self.Bases[player] and (root.Position-self.Bases[player].Position).Magnitude<distance
+end
+function Game:travel(player,position)
+    if self.LastTravel[player] and os.clock()-self.LastTravel[player]<3 then return false end
+    local char=player.Character; local hum=char and char:FindFirstChildOfClass("Humanoid")
+    if not hum or hum.Health<=0 then return false end
+    if hum.SeatPart then self:notice(player,"Jump out of your vehicle before fast travelling."); return false end
+    self.LastTravel[player]=os.clock(); hum:UnequipTools()
+    char:PivotTo(CFrame.new(position+Vector3.new(0,5,0))); char.HumanoidRootPart.AssemblyLinearVelocity=Vector3.zero
+    return true
+end
+function Game:sell(player)
+    local p=self.Profiles[player]; local base=self.Bases[player]
+    if not p or not self:nearBase(player,60) then return end
+    local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+    if not root or (root.Position-base.Depot.Position).Magnitude>23 then self:notice(player,"Walk onto the gold SHIP DUST pad at your base."); return end
+    if self.LastSale[player] and os.clock()-self.LastSale[player]<1 then return end
+    self.LastSale[player]=os.clock()
+    local ok,result=Rules.sell(p,self.Config)
+    if ok then self.World:ship(base); self:notice(player,"Shipment launched! +"..result.." credits") else self:notice(player,result) end
+    self:publish(player)
+end
+function Game:action(player,kind,index)
+    if type(kind)~="string" or #kind>30 then return end
+    if index~=nil and (type(index)~="number" or index~=index or index%1~=0 or index<1 or index>20) then return end
+    local p=self.Profiles[player]; if not p then return end
+    local now=os.clock()
+    if self.LastAction[player] and now-self.LastAction[player]<0.18 then return end
+    self.LastAction[player]=now; self.LastActive[player]=now
+    if kind=="Sell" then self:sell(player); return
+    elseif kind=="FieldSell" then
+        local root=player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+        local nearby=false
+        if root then for _,z in ipairs(self.World.Zones) do if (root.Position-z.Entry.Position).Magnitude<20 then nearby=true end end end
+        if p.Buildings.Radio<2 or not nearby then self:notice(player,"Radio level 2 and proximity to a field beacon are required."); return end
+        local ok,result=Rules.sell(p,self.Config)
+        if ok then self.World:ship(self.Bases[player]); self:notice(player,"Remote shipment! +"..result.." credits") else self:notice(player,result) end
+    elseif kind=="Home" then self:travel(player,self.Bases[player].Position+Vector3.new(0,0,-14)); return
+    elseif kind=="Travel" then
+        if not index or index>p.Zone then self:notice(player,"Unlock that zone first."); return end
+        self:travel(player,self.World.Zones[index].Center+Vector3.new(0,0,-34)); return
+    elseif kind=="RobotZone" then
+        if not index or index>p.Zone then return end
+        p.RobotZone=index; self:notice(player,"Robots assigned to "..self.Config.Zones[index].Name)
+    elseif kind=="SpawnVehicle" then
+        local ok,msg=self.Vehicles:spawn(player); self:notice(player,msg)
+    elseif kind=="Daily" or kind=="DailyMission" or kind=="WeeklyMission" then
+        local ok,result
+        if kind=="Daily" then ok,result=Rules.daily(p,os.time())
+        else ok,result=Rules.mission(p,os.time(),kind=="WeeklyMission") end
+        self:notice(player,ok and ("Delivery received! +"..result.." credits and capsules") or result)
+    elseif kind=="Open" then
+        local ok,result=Rules.open(p,self.Config,self.Random:NextNumber())
+        if ok then self.Remotes.Capsule:FireClient(player,result) else self:notice(player,result) end
+    elseif kind=="Craft" then
+        if p.Fragments<100 then self:notice(player,"100 fragments are needed to craft a capsule.")
+        else p.Fragments=p.Fragments-100; p.Capsules=p.Capsules+1 end
+    elseif kind=="Cosmetic" then
+        if index and p.Cosmetics[tostring(index)] then p.Equipped=index end
+    elseif kind=="Prestige" then
+        if not self:nearBase(player,55) then self:notice(player,"Return home before rehiring."); return end
+        local ok,result=Rules.prestige(p,self.Config,os.time())
+        if ok then self.Vehicles:remove(player)
+            local robots=self.World.Robots[player]
+            if robots then for _,robot in ipairs(robots) do robot:Destroy() end end
+            self.World.Robots[player]=nil
+            self.World:upgrade(self.Bases[player],p)
+            self:travel(player,self.Bases[player].Position) end
+        self:notice(player,result)
+    else
+        if not self:nearBase(player,55) then self:notice(player,"Return to your base to buy upgrades."); return end
+        local ok,result=Rules.purchase(p,self.Config,kind,index)
+        if ok then self.World:upgrade(self.Bases[player],p); self:notice(player,"Unlocked: "..result)
+        else self:notice(player,result) end
+    end
+    self:publish(player)
+end
+function Game:add(player)
+    local profile,status=self.Data:load(player)
+    if not profile then player:Kick(status); return end
+    if not player.Parent then self.Data:save(player,profile,true); return end
+    local base=self.World:assign(player)
+    if not base then self.Data:save(player,profile,true); player:Kick("All lunar bases are occupied."); return end
+    self.Profiles[player]=profile; self.Bases[player]=base; self.LastActive[player]=os.clock()
+    Rules.periods(profile,os.time()); local offline=Rules.offline(profile,self.Config,os.time())
+    player:SetAttribute("SaveStatus",status)
+    local data=player:GetJoinData(); local code=data.TeleportData and data.TeleportData.FriendCode
+    if type(code)=="string" and #code==8 then player:SetAttribute("FriendCode",code) end
+    local stats=Instance.new("Folder"); stats.Name="leaderstats"; stats.Parent=player
+    for _,name in ipairs({"Credits","Cleaned"}) do local v=Instance.new("IntValue"); v.Name=name; v.Parent=stats end
+    self.World:upgrade(base,profile); self:attributes(player)
+    local function spawned(character) State.spawn(player,character,profile,self.Config,base) end
+    player.CharacterAdded:Connect(spawned)
+    if player.Character then task.spawn(spawned,player.Character) end
+    player:SetAttribute("Loaded",true)
+    if offline>0 then task.delay(5,function() self:notice(player,"Your robots earned "..offline.." credits while you were away (3h cap).") end) end
+    local touchConnection
+    touchConnection=base.Depot.Touched:Connect(function(hit)
+        if self.Profiles[player] and player.Character and hit:IsDescendantOf(player.Character) then self:sell(player) end
+    end)
+    base.TouchConnection=touchConnection
+    self.World.prompt(base.Depot,"SHIP DUST",function(visitor) if visitor==player then self:sell(player) else self:notice(visitor,"This is another cleaner's depot. Use HOME to find yours.") end end)
+    for id,part in pairs(base.Buildings) do
+        self.World.prompt(part,"OPEN "..id:upper(),function(visitor)
+            if visitor==player then self.Remotes.OpenPanel:FireClient(player,id=="Garage" and "Vehicles" or id=="Radio" and "Robots" or id=="HQ" and "Missions" or "Shop") end
+        end)
+    end
+end
+function Game:remove(player)
+    player:SetAttribute("Loaded",false)
+    local p=self.Profiles[player]
+    -- Detach gameplay before yielding for save so rewards cannot mutate a departing profile.
+    self.Profiles[player]=nil
+    if p then self.Data:save(player,p,true) end
+    local base=self.Bases[player]
+    if base and base.TouchConnection then base.TouchConnection:Disconnect(); base.TouchConnection=nil end
+    if base then for _,item in ipairs(base.Model:GetDescendants()) do if item:IsA("ProximityPrompt") then item:Destroy() end end end
+    self.Vehicles:remove(player); self.World:release(player)
+    self.Bases[player]=nil; self.LastSale[player]=nil; self.LastAction[player]=nil; self.LastTravel[player]=nil
+    self.LastActive[player]=nil; self.LastSnapshot[player]=nil; self.Cleaning.Sessions[player]=nil
+    self.Lobby.Last[player]=nil
+end
+function Game:robots()
+    for player,p in pairs(self.Profiles) do
+        for index,tier in ipairs(p.Robots) do
+            local zone=self.World.Zones[p.RobotZone]; local target=zone.Center+Vector3.new(self.Random:NextNumber(-35,35),0,self.Random:NextNumber(-35,35))
+            self.World:robot(player,index,self.Config.Robots[tier],target)
+            self.Cleaning:take(player,p.RobotZone,target,4+tier,2*self.Config.Robots[tier].Rate,"Robot")
+        end
+        if p.RobotDust>0 then
+            local pay=Rules.credit(p,p.RobotValue*Rules.multiplier(p,self.Config)*(1+p.Buildings.Depot*0.1))
+            p.RobotDust=0; p.RobotValue=0
+            self:attributes(player)
+        end
+    end
+end
+function Game:start()
+    self.Remotes.Action.OnServerEvent:Connect(function(player,kind,index) self:action(player,kind,index) end)
+    self.Remotes.Scrub.OnServerEvent:Connect(function(player,target) self.Cleaning:scrub(player,target) end)
+    self.Remotes.Drive.OnServerEvent:Connect(function(player,input) self.Vehicles:drive(player,input) end)
+    self.Remotes.Lobby.OnServerEvent:Connect(function(player,mode,code)
+        if self.Profiles[player] and type(mode)=="string" then self.Lobby:request(player,mode,code) end
+    end)
+    self.Remotes.Snapshot.OnServerInvoke=function(player)
+        if not self.Profiles[player] then return nil end
+        if self.LastSnapshot[player] and os.clock()-self.LastSnapshot[player]<1 then return nil end
+        self.LastSnapshot[player]=os.clock()
+        local out=self.Cleaning:snapshot(); out.State=self:public(player); return out
+    end
+    Players.PlayerAdded:Connect(function(player) self:add(player) end)
+    Players.PlayerRemoving:Connect(function(player) self:remove(player) end)
+    for _,player in ipairs(Players:GetPlayers()) do task.spawn(function() self:add(player) end) end
+    task.spawn(function()
+        local ticks=0
+        while true do task.wait(0.15); self.Cleaning:tick(); ticks=ticks+1
+            if ticks%14==0 then self:robots() end
+            if ticks%20==0 then
+                local lines={"CREW LEADERBOARD"}; local list={}
+                for player,p in pairs(self.Profiles) do table.insert(list,{Name=player.DisplayName,Value=p.TotalEarned}); self:publish(player) end
+                table.sort(list,function(a,b) return a.Value>b.Value end)
+                for rank,row in ipairs(list) do table.insert(lines,rank..". "..row.Name.."  $"..math.floor(row.Value)) end
+                self.World.Board.Text=table.concat(lines,"\n")
+            end
+        end
+    end)
+    task.spawn(function()
+        while true do
+            task.wait(60)
+            for player,p in pairs(self.Profiles) do task.spawn(function()
+                if not self.Data:save(player,p,false) and player.Parent then
+                    player:SetAttribute("SaveStatus","SAVE FAILED — reconnect before continuing")
+                    -- Stop further progression if the session lease can no longer be renewed.
+                    player:Kick("Your save could not be secured. Rejoin shortly to protect your progress.")
+                end
+            end) end
+        end
+    end)
+    task.spawn(function()
+        local radio={"You're paid to clean, not stare at the stars.","LSD budget update: still one toothbrush.","Your robot has requested a union representative."}
+        while true do task.wait(45)
+            for player in pairs(self.Profiles) do
+                if os.clock()-(self.LastActive[player] or 0)>35 then self:notice(player,"LSD RADIO: "..radio[self.Random:NextInteger(1,#radio)]) end
+            end
+        end
+    end)
+    task.spawn(function()
+        while true do task.wait(240); self.EventMultiplier=1.5
+            for player in pairs(self.Profiles) do self:notice(player,"METEOR SHOWER! Dust is worth 1.5x for 60 seconds.") end
+            self.Remotes.Event:FireAllClients("Meteor")
+            task.wait(60); self.EventMultiplier=1
+        end
+    end)
+    game:BindToClose(function()
+        local remaining=0
+        for player,p in pairs(self.Profiles) do remaining=remaining+1
+            task.spawn(function() self.Data:save(player,p,true); remaining=remaining-1 end) end
+        local deadline=os.clock()+25
+        while (remaining>0 or next(self.Data.Saving)~=nil) and os.clock()<deadline do task.wait(0.1) end
+    end)
+end
+return Game
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="13">
+          <Properties>
+            <string name="Name">LobbyService</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local TeleportService=game:GetService("TeleportService")
+local MemoryStoreService=game:GetService("MemoryStoreService")
+local HttpService=game:GetService("HttpService")
+local RunService=game:GetService("RunService")
+local Lobby={}
+function Lobby.new(g)
+    return setmetatable({Game=g,Codes=MemoryStoreService:GetHashMap("MoonScrubbersFriendRooms_v1"),Busy={},Last={}},{__index=Lobby})
+end
+function Lobby:request(player,mode,code)
+    if mode~="Public" and mode~="Solo" and mode~="Friends" and mode~="Join" then return end
+    if self.Busy[player] or (self.Last[player] and os.clock()-self.Last[player]<10) then return end
+    self.Last[player]=os.clock()
+    if mode=="Public" and game.PrivateServerId=="" then self.Game:notice(player,"Public crew session joined. Welcome to your lunar career."); return end
+    if RunService:IsStudio() then self.Game:notice(player,"Studio uses local play. Solo/Friends teleporting requires a published experience."); return end
+    self.Busy[player]=true
+    task.spawn(function()
+        local ok,err=pcall(function()
+            if mode=="Public" then TeleportService:TeleportAsync(game.PlaceId,{player}); return end
+            local reserved
+            if mode=="Join" then
+                if type(code)~="string" or not code:match("^%x%x%x%x%x%x%x%x$") then error("Enter the eight-character friend code.") end
+                reserved=self.Codes:GetAsync(code:upper())
+                if not reserved then error("Code expired or not found.") end
+            elseif mode=="Solo" or mode=="Friends" then
+                reserved=TeleportService:ReserveServerAsync(game.PlaceId)
+                if mode=="Friends" then
+                    local token=HttpService:GenerateGUID(false):gsub("%-",""):sub(1,8):upper()
+                    self.Codes:SetAsync(token,reserved,86400)
+                    player:SetAttribute("FriendCode",token)
+                    self.Game:notice(player,"Friend room code: "..token..". Copy it before travelling.")
+                    -- Code is non-secret join capability, not the reserved-server access code.
+                    self.Game.Remotes.RoomCode:FireClient(player,token)
+                    task.wait(8)
+                end
+            else return end
+            local options=Instance.new("TeleportOptions"); options.ReservedServerAccessCode=reserved
+            options:SetTeleportData({Mode=mode,FriendCode=player:GetAttribute("FriendCode")})
+            TeleportService:TeleportAsync(game.PlaceId,{player},options)
+        end)
+        if not ok and player.Parent then self.Game:notice(player,"Room unavailable: "..tostring(err):sub(1,150)) end
+        self.Busy[player]=nil
+    end)
+end
+return Lobby
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="14">
+          <Properties>
+            <string name="Name">PlayerStateService</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local State={}
+function State.apply(player,p,config)
+    local char=player.Character; if not char then return end
+    local hum=char:FindFirstChildOfClass("Humanoid"); if not hum then return end
+    hum.WalkSpeed=config.Suits[p.Suit].Speed
+    hum.UseJumpPower=true; hum.JumpPower=25
+    local rgb=(p.Equipped>0 and config.Rarities[p.Equipped] or config.Suits[p.Suit]).Color
+    local color=Color3.fromRGB(rgb[1],rgb[2],rgb[3])
+    for _,part in ipairs(char:GetChildren()) do
+        if part:IsA("BasePart") and part.Name~="HumanoidRootPart" and part.Name~="DustTank" then part.Color=color end
+    end
+    local tool=char:FindFirstChildOfClass("Tool")
+    if not tool and player:FindFirstChild("Backpack") then tool=player.Backpack:FindFirstChildOfClass("Tool") end
+    if tool and tool:GetAttribute("MoonTool") then tool.Name="LSD "..config.Tools[p.Tool].Name; tool:SetAttribute("ToolTier",p.Tool) end
+    local pack=char:FindFirstChild("DustTank")
+    if pack then
+        pack.Color=color
+        local gui=pack:FindFirstChildOfClass("SurfaceGui")
+        if gui then gui.Background.Fill.Size=UDim2.fromScale(1,math.clamp(p.Dust/(player:GetAttribute("TankCapacity") or 50),0,1)) end
+    end
+end
+function State.spawn(player,character,p,config,base)
+    local hum=character:WaitForChild("Humanoid",10)
+    local torso=character:WaitForChild("HumanoidRootPart",10)
+    local bag=player:WaitForChild("Backpack",10)
+    if not hum or not torso or not bag or not player.Parent then return end
+    character:PivotTo(CFrame.new(base.Position+Vector3.new(0,5,-14)))
+    local tool=Instance.new("Tool"); tool.Name="LSD "..config.Tools[p.Tool].Name
+    tool.RequiresHandle=false; tool.CanBeDropped=false; tool:SetAttribute("MoonTool",true)
+    tool:SetAttribute("ToolTier",p.Tool); tool.Parent=bag
+    -- Third-person brush. The first-person viewmodel is separate and local.
+    local hand=character:FindFirstChild("RightHand") or character:FindFirstChild("Right Arm")
+    if hand then
+        local brush=Instance.new("Part"); brush.Name="WorldBrush"; brush.Size=Vector3.new(0.15,0.15,1.5)
+        brush.CanCollide=false; brush.CanQuery=false; brush.Massless=true
+        brush.Color=Color3.fromRGB(75,220,205); brush.CFrame=hand.CFrame*CFrame.new(0,-0.2,-0.6)
+        brush.Parent=tool
+        local weld=Instance.new("WeldConstraint"); weld.Part0=hand; weld.Part1=brush; weld.Parent=brush
+    end
+    local pack=Instance.new("Part"); pack.Name="DustTank"; pack.Size=Vector3.new(1.5,1.9,0.8)
+    pack.Massless=true; pack.CanCollide=false; pack.CanQuery=false; pack.CanTouch=false
+    local back=character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+    if back then
+        pack.CFrame=back.CFrame*CFrame.new(0,0,0.9); pack.Parent=character
+        local weld=Instance.new("WeldConstraint"); weld.Part0=back; weld.Part1=pack; weld.Parent=pack
+        local gui=Instance.new("SurfaceGui"); gui.Face=Enum.NormalId.Back; gui.CanvasSize=Vector2.new(100,150); gui.Parent=pack
+        local bg=Instance.new("Frame"); bg.Name="Background"; bg.Size=UDim2.fromScale(0.7,0.8)
+        bg.Position=UDim2.fromScale(0.15,0.1); bg.BackgroundColor3=Color3.fromRGB(20,25,36); bg.Parent=gui
+        local fill=Instance.new("Frame"); fill.Name="Fill"; fill.AnchorPoint=Vector2.new(0,1)
+        fill.Position=UDim2.fromScale(0,1); fill.BackgroundColor3=Color3.fromRGB(248,186,80); fill.Parent=bg
+    end
+    -- Clear cosmetic accessories; preserve the user's actual avatar data.
+    local helmet=Instance.new("Part"); helmet.Name="EVAHelmet"; helmet.Shape=Enum.PartType.Ball
+    helmet.Size=Vector3.new(2,2,2); helmet.Transparency=0.55; helmet.Material=Enum.Material.Glass
+    helmet.Color=Color3.fromRGB(180,210,235); helmet.CanCollide=false; helmet.CanQuery=false; helmet.Massless=true
+    local head=character:FindFirstChild("Head")
+    if head then helmet.CFrame=head.CFrame; helmet.Parent=character
+        local weld=Instance.new("WeldConstraint"); weld.Part0=head; weld.Part1=helmet; weld.Parent=helmet end
+    State.apply(player,p,config)
+    -- Start in third person so the base and shop UI are discoverable.
+end
+return State
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="15">
+          <Properties>
+            <string name="Name">VehicleService</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local RunService=game:GetService("RunService")
+local Vehicle={}
+function Vehicle.new(g)
+    local self=setmetatable({Game=g,Active={},Input={}},{__index=Vehicle})
+    RunService.Heartbeat:Connect(function(dt) self:step(math.min(dt,0.1)) end)
+    return self
+end
+function Vehicle:remove(player)
+    if self.Active[player] then self.Active[player].Model:Destroy() end
+    self.Active[player]=nil; self.Input[player]=nil
+end
+function Vehicle:spawn(player)
+    local g=self.Game; local p=g.Profiles[player]; local base=g.Bases[player]
+    if p.Vehicle<1 then return false,"Buy a vehicle in the garage first." end
+    if not g:nearBase(player,65) then return false,"Return to your base to deploy a vehicle." end
+    self:remove(player)
+    local stats=g.Config.Vehicles[p.Vehicle]; local model=Instance.new("Model"); model.Name=player.Name.."'s "..stats.Name
+    local chassis=g.World.part(model,"Chassis",Vector3.new(7,1.5,10),base.Position+Vector3.new(0,5,-24),Color3.fromRGB(242,177,62))
+    chassis.Anchored=false; model.PrimaryPart=chassis
+    local function weld(part)
+        part.Anchored=false; part.Massless=true
+        local w=Instance.new("WeldConstraint"); w.Part0=chassis; w.Part1=part; w.Parent=part
+    end
+    local seat=Instance.new("VehicleSeat"); seat.Name="Driver"; seat.Size=Vector3.new(2,1,2)
+    seat.CFrame=chassis.CFrame*CFrame.new(0,1.5,0); seat.Parent=model; weld(seat)
+    local passenger=Instance.new("Seat"); passenger.Name="Crew Seat"; passenger.Size=Vector3.new(2,1,2)
+    passenger.CFrame=chassis.CFrame*CFrame.new(0,1.5,3); passenger.Parent=model; weld(passenger)
+    for _,x in ipairs({-3.6,3.6}) do for _,z in ipairs({-3.2,3.2}) do
+        local wheel=g.World.part(model,"Wheel",Vector3.new(1.4,2.8,2.8),chassis.Position+Vector3.new(x,-0.5,z),Color3.fromRGB(30,35,48))
+        wheel.Shape=Enum.PartType.Cylinder; weld(wheel)
+    end end
+    local brush=g.World.part(model,"Sweeper",Vector3.new(stats.Radius*2,0.8,1.5),chassis.Position+Vector3.new(0,-0.6,-5.5),Color3.fromRGB(65,225,210))
+    brush.CanCollide=false; weld(brush)
+    local attachment=Instance.new("Attachment"); attachment.Parent=chassis
+    local align=Instance.new("AlignOrientation"); align.Mode=Enum.OrientationAlignmentMode.OneAttachment
+    align.Attachment0=attachment; align.MaxTorque=150000; align.Responsiveness=6; align.Parent=chassis
+    if p.Vehicle>=3 then
+        local tank=g.World.part(model,"Industrial Dust Tank",Vector3.new(5,3,4),chassis.Position+Vector3.new(0,2.5,2),Color3.fromRGB(87,114,140))
+        weld(tank)
+    end
+    if p.Vehicle==6 then
+        for _,side in ipairs({-1,1}) do
+            local wing=g.World.part(model,"Starship Wing",Vector3.new(8,0.4,6),chassis.Position+Vector3.new(side*6,0,1),Color3.fromRGB(120,90,190))
+            weld(wing)
+            local engine=g.World.part(model,"Ion Engine",Vector3.new(2,2,3),chassis.Position+Vector3.new(side*5,0,5),Color3.fromRGB(80,225,240),Enum.Material.Neon)
+            weld(engine)
+        end
+    end
+    g.World.label(chassis,stats.Name.." / "..stats.Capacity.." dust")
+    model.Parent=g.World.Root; chassis:SetNetworkOwner(nil)
+    self.Active[player]={Model=model,Body=chassis,Seat=seat,Align=align,Yaw=0,Timer=0}
+    local hum=player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum:UnequipTools(); task.delay(0.2,function() if seat.Parent then seat:Sit(hum) end end) end
+    return true,"Vehicle deployed. Drive with WASD, stick or Roblox touch controls; dust is collected while moving."
+end
+function Vehicle:drive(player,input)
+    if typeof(input)~="Vector2" or input.X~=input.X or input.Y~=input.Y then return end
+    if math.abs(input.X)>1 or math.abs(input.Y)>1 then return end
+    local v=self.Active[player]
+    if not v or not v.Seat.Occupant or v.Seat.Occupant.Parent~=player.Character then return end
+    local old=self.Input[player]
+    if old and os.clock()-old.At<0.07 then return end
+    self.Input[player]={Vector=input,At=os.clock()}
+end
+function Vehicle:step(dt)
+    for player,v in pairs(self.Active) do
+        local p=self.Game.Profiles[player]
+        if p and v.Body.Parent then
+            local stats=self.Game.Config.Vehicles[p.Vehicle]
+            local input=self.Input[player]
+            local vector=input and os.clock()-input.At<0.4 and input.Vector or Vector2.zero
+            if not v.Seat.Occupant or v.Seat.Occupant.Parent~=player.Character then vector=Vector2.zero end
+            v.Yaw=v.Yaw-vector.X*dt*1.4
+            v.Align.CFrame=CFrame.Angles(0,v.Yaw,0)
+            local velocity=v.Body.AssemblyLinearVelocity
+            local direction=CFrame.Angles(0,v.Yaw,0).LookVector*vector.Y*stats.Speed*(1+p.Buildings.Garage*0.04)
+            local blend=math.min(1,dt*2)
+            v.Body.AssemblyLinearVelocity=Vector3.new(velocity.X+(direction.X-velocity.X)*blend,velocity.Y,velocity.Z+(direction.Z-velocity.Z)*blend)
+            v.Timer=v.Timer+dt
+            if v.Timer>=0.2 then
+                local elapsed=math.min(v.Timer,0.3); v.Timer=0
+                if Vector3.new(velocity.X,0,velocity.Z).Magnitude>2 and vector.Y~=0 then
+                    for id,z in ipairs(self.Game.World.Zones) do
+                        local delta=v.Body.Position-z.Center
+                        if math.abs(delta.X)<40 and math.abs(delta.Z)<40 and math.abs(delta.Y)<10 then
+                            self.Game.Cleaning:take(player,id,v.Body.Position,stats.Radius,stats.Rate*elapsed,"Vehicle"); break
+                        end
+                    end
+                end
+                local base=self.Game.Bases[player]
+                if (v.Body.Position-base.Depot.Position).Magnitude<22 and p.VehicleDust>0 then self.Game:sell(player) end
+            end
+            if v.Body.Position.Y < -50 then self:remove(player) end
+        end
+    end
+end
+return Vehicle
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="16">
+          <Properties>
+            <string name="Name">WorldService</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local Lighting=game:GetService("Lighting")
+local TweenService=game:GetService("TweenService")
+local Debris=game:GetService("Debris")
+local World={}
+local teal=Color3.fromRGB(72,218,203)
+function World.part(parent,name,size,position,color,material)
+    local p=Instance.new("Part"); p.Name=name; p.Size=size; p.Position=position
+    p.Anchored=true; p.Color=color or Color3.fromRGB(65,75,94); p.Material=material or Enum.Material.Metal
+    p.TopSurface=Enum.SurfaceType.Smooth; p.BottomSurface=Enum.SurfaceType.Smooth; p.Parent=parent
+    return p
+end
+function World.label(part,text,color)
+    local gui=Instance.new("BillboardGui"); gui.Size=UDim2.fromOffset(250,65)
+    gui.StudsOffset=Vector3.new(0,4,0); gui.MaxDistance=125; gui.AlwaysOnTop=false; gui.Parent=part
+    local label=Instance.new("TextLabel"); label.Size=UDim2.fromScale(1,1)
+    label.BackgroundTransparency=1; label.Text=text; label.TextColor3=color or teal
+    label.TextStrokeTransparency=0.25; label.Font=Enum.Font.GothamBold; label.TextSize=17
+    label.TextWrapped=true; label.Parent=gui; return label
+end
+function World.prompt(part,text,callback)
+    local p=Instance.new("ProximityPrompt"); p.ActionText=text; p.ObjectText=part.Name
+    p.MaxActivationDistance=16; p.HoldDuration=0.15; p.RequiresLineOfSight=false; p.Parent=part
+    p.Triggered:Connect(callback); return p
+end
+function World.start(config)
+    local self=setmetatable({Zones={},Bases={},Robots={}}, {__index=World})
+    local root=Instance.new("Folder"); root.Name="MoonWorld"; root.Parent=workspace; self.Root=root
+    workspace.Gravity=config.Gravity
+    Lighting.ClockTime=0; Lighting.Brightness=2; Lighting.Ambient=Color3.fromRGB(92,106,145)
+    Lighting.OutdoorAmbient=Color3.fromRGB(82,90,125)
+    local sky=Instance.new("Sky"); sky.StarCount=5000; sky.CelestialBodiesShown=true; sky.Parent=Lighting
+    World.part(root,"Lunar Bedrock",Vector3.new(530,5,530),Vector3.new(0,-3,170),Color3.fromRGB(66,73,91),Enum.Material.Slate)
+    World.part(root,"LSD Landing Plaza",Vector3.new(190,1,85),Vector3.new(0,-0.5,0))
+    local earth=World.part(root,"Earth",Vector3.new(90,90,90),Vector3.new(0,230,-430),Color3.fromRGB(55,127,215),Enum.Material.Neon)
+    earth.Shape=Enum.PartType.Ball; earth.CanCollide=false
+    local sign=World.part(root,"LSD Dispatch",Vector3.new(27,9,1),Vector3.new(0,12,-35))
+    World.label(sign,"MOON SCRUBBERS\nLUNAR SURFACE DEPARTMENT",teal)
+    local board=World.part(root,"Crew Leaderboard",Vector3.new(18,12,1),Vector3.new(33,8,-32))
+    self.Board=World.label(board,"CREW LEADERBOARD\nClock in. Clean up. Cash out.")
+    local spawn=Instance.new("SpawnLocation"); spawn.Name="LSD Arrival"
+    spawn.Size=Vector3.new(6,1,6); spawn.Position=Vector3.new(0,0.6,-12)
+    spawn.Anchored=true; spawn.Neutral=true; spawn.Duration=0; spawn.Parent=root
+    for id,z in ipairs(config.Zones) do
+        local model=Instance.new("Model"); model.Name=z.Name; model.Parent=root
+        local floor=World.part(model,"DustField",Vector3.new(80,1,80),Vector3.new(z.X,-0.5,z.Z),Color3.fromRGB(82,92,111),Enum.Material.Slate)
+        floor:SetAttribute("ZoneId",id)
+        local entry=World.part(model,"Zone Beacon",Vector3.new(2,9,2),Vector3.new(z.X,4,z.Z-43),teal,Enum.Material.Neon)
+        World.label(entry,z.Name.."\n"..z.Value.." credits / dust • suit "..z.Suit)
+        self.Zones[id]={Floor=floor,Center=Vector3.new(z.X,0,z.Z),Entry=entry}
+        -- Crater rims, rocks and crystals decorate the outside; grids remain navigable.
+        for k=1,12 do
+            local angle=k*math.pi/6; local pos=Vector3.new(z.X+math.cos(angle)*46,2,z.Z+math.sin(angle)*46)
+            local rock=World.part(model,id==5 and "Lunar Crystal" or "Crater Rim",Vector3.new(6,3+(k%4)*2,6),pos,
+                id==5 and Color3.fromRGB(165,100,245) or Color3.fromRGB(94,96,109),id==5 and Enum.Material.Neon or Enum.Material.Rock)
+            rock.CFrame=rock.CFrame*CFrame.Angles(0,k,math.rad(k%3*12))
+        end
+        if id==4 then
+            World.part(model,"Abandoned Habitat",Vector3.new(15,10,12),Vector3.new(z.X+30,5,z.Z+48),Color3.fromRGB(87,97,104))
+        elseif id==5 then
+            World.part(model,"Cavern Canopy",Vector3.new(90,3,90),Vector3.new(z.X,22,z.Z),Color3.fromRGB(51,46,67),Enum.Material.Rock)
+        end
+    end
+    local slots={Vector3.new(-60,0,-10),Vector3.new(60,0,-10),Vector3.new(-60,0,40),Vector3.new(60,0,40)}
+    for id,pos in ipairs(slots) do
+        local model=Instance.new("Model"); model.Name="BasePlot"..id; model.Parent=root
+        World.part(model,"Foundation",Vector3.new(49,0.8,43),pos+Vector3.new(0,0,0))
+        local nameplate=World.part(model,"Base Sign",Vector3.new(18,3,1),pos+Vector3.new(0,6,-20),Color3.fromRGB(30,40,57))
+        local base={Model=model,Position=pos,Label=World.label(nameplate,"AVAILABLE LSD CONTRACT"),Buildings={}}
+        for index,b in ipairs(config.Buildings) do
+            local x=(index-3)*9
+            local p=World.part(model,b.Name,Vector3.new(7,3,7),pos+Vector3.new(x,2,5))
+            World.part(model,b.Id.."Roof",Vector3.new(8,0.5,8),p.Position+Vector3.new(0,2,0),teal)
+            base.Buildings[b.Id]=p
+            World.label(p,b.Name.."\nLEVEL 0")
+        end
+        local depot=World.part(model,"SHIP DUST",Vector3.new(8,0.3,8),pos+Vector3.new(-14,0.7,-10),Color3.fromRGB(248,179,65),Enum.Material.Neon)
+        base.Depot=depot
+        local rocket=World.part(model,"Delivery Capsule",Vector3.new(7,3,3),pos+Vector3.new(-14,4,-10),Color3.fromRGB(230,235,240))
+        rocket.Shape=Enum.PartType.Cylinder; rocket.CFrame=rocket.CFrame*CFrame.Angles(0,0,math.pi/2)
+        base.Rocket=rocket
+        local antenna=World.part(model,"LSD Antenna",Vector3.new(0.7,12,0.7),pos+Vector3.new(20,6,-12))
+        local dish=World.part(model,"Satellite Dish",Vector3.new(5,1,5),antenna.Position+Vector3.new(0,6,0),Color3.fromRGB(218,226,237))
+        dish.Shape=Enum.PartType.Ball
+        for _,x in ipairs({-23,23}) do
+            World.part(model,"Base Light",Vector3.new(0.4,0.3,37),pos+Vector3.new(x,0.5,0),teal,Enum.Material.Neon)
+        end
+        local light=Instance.new("PointLight"); light.Color=teal; light.Range=26; light.Brightness=2; light.Parent=nameplate
+        self.Bases[id]=base
+    end
+    return self
+end
+function World:assign(player)
+    for _,base in ipairs(self.Bases) do
+        if not base.Owner then base.Owner=player; base.Label.Text=player.DisplayName.."'S LUNAR BASE"; return base end
+    end
+end
+function World:upgrade(base,p)
+    for id,part in pairs(base.Buildings) do
+        local level=p.Buildings[id]
+        part.Size=Vector3.new(7,3+level*1.5,7)
+        part.Position=Vector3.new(part.Position.X,base.Position.Y+2+level*0.75,part.Position.Z)
+        part.Color=Color3.fromRGB(65+level*12,75+level*15,94+level*12)
+        local roof=base.Model:FindFirstChild(id.."Roof")
+        roof.Position=part.Position+Vector3.new(0,part.Size.Y/2+0.3,0)
+        part:FindFirstChildOfClass("BillboardGui").TextLabel.Text=part.Name.."\nLEVEL "..level
+    end
+end
+function World:ship(base)
+    -- Separate visual clone: multiple shipments cannot destroy or move the depot.
+    local rocket=base.Rocket:Clone(); rocket.Name="Launched Shipment"; rocket.Parent=self.Root
+    local fire=Instance.new("Fire"); fire.Size=7; fire.Heat=12; fire.Parent=rocket
+    TweenService:Create(rocket,TweenInfo.new(3,Enum.EasingStyle.Quad,Enum.EasingDirection.In),{CFrame=rocket.CFrame+Vector3.new(0,180,0),Transparency=1}):Play()
+    Debris:AddItem(rocket,3.2)
+end
+function World:release(player)
+    for _,base in ipairs(self.Bases) do
+        if base.Owner==player then base.Owner=nil; base.Label.Text="AVAILABLE LSD CONTRACT" end
+    end
+    local robots=self.Robots[player]
+    if robots then for _,r in ipairs(robots) do r:Destroy() end end
+    self.Robots[player]=nil
+end
+function World:robot(player,index,tier,position)
+    self.Robots[player]=self.Robots[player] or {}
+    local list=self.Robots[player]
+    if not list[index] then
+        local p=World.part(self.Root,"LSD Robot",Vector3.new(2,1.5,2),position,teal)
+        p.CanCollide=false; p.CanQuery=false; World.label(p,tier.Name,teal); list[index]=p
+    end
+    local target=position+Vector3.new(0,1+(index%2)*0.6,0)
+    TweenService:Create(list[index],TweenInfo.new(1.8),{Position=target}):Play()
+end
+return World
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="17">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="18">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="19">
+        <Properties>
+          <string name="Name">MoonScrubbers</string>
+        </Properties>
+        <Item class="LocalScript" referent="20">
+          <Properties>
+            <string name="Name">Bootstrap</string>
+            <string name="Source"><![CDATA[--!nonstrict
+local RS=game:GetService("ReplicatedStorage")
+local Players=game:GetService("Players")
+local root=RS:WaitForChild("MoonScrubbers")
+while not root:GetAttribute("Ready") do root:GetAttributeChangedSignal("Ready"):Wait() end
+local player=Players.LocalPlayer
+while not player:GetAttribute("Loaded") do player:GetAttributeChangedSignal("Loaded"):Wait() end
+local config=require(root.Shared.Config); local remotes=root:WaitForChild("Remotes")
+local controllers=script.Parent.Controllers
+local input=require(controllers.InputController).new()
+local viewmodel=require(controllers.ViewmodelController).new(config)
+local ui=require(controllers.UIController).new(config,remotes)
+local effects=require(controllers.EffectsController).new(config)
+remotes.Event.OnClientEvent:Connect(function()
+    local Debris=game:GetService("Debris")
+    local TweenService=game:GetService("TweenService")
+    for i=1,12 do
+        task.delay(i*0.4,function()
+            local meteor=Instance.new("Part"); meteor.Size=Vector3.new(2,2,5); meteor.Anchored=true
+            meteor.CanCollide=false; meteor.CanQuery=false; meteor.Material=Enum.Material.Neon
+            meteor.Color=Color3.fromRGB(255,170,75); meteor.Position=Vector3.new(math.random(-150,150),170,math.random(60,250))
+            meteor.Parent=workspace
+            TweenService:Create(meteor,TweenInfo.new(1.4),{Position=meteor.Position+Vector3.new(30,-165,20),Transparency=1}):Play()
+            Debris:AddItem(meteor,1.5)
+        end)
+    end
+end)
+require(controllers.CleaningController).start(config,root,input,viewmodel,ui,effects)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="Folder" referent="21">
+          <Properties>
+            <string name="Name">Controllers</string>
+          </Properties>
+          <Item class="ModuleScript" referent="22">
+            <Properties>
+              <string name="Name">CleaningController</string>
+              <string name="Source"><![CDATA[--!nonstrict
+local Players=game:GetService("Players")
+local RunService=game:GetService("RunService")
+local Cleaning={}
+function Cleaning.start(config,root,input,viewmodel,ui,effects)
+    local player=Players.LocalPlayer; local remotes=root:WaitForChild("Remotes"); local c=config.Cleaning
+    local world=workspace:WaitForChild("MoonWorld")
+    local floors,frames,surfaces={},{},{}
+    for _,part in ipairs(world:GetDescendants()) do
+        if part:IsA("BasePart") and part:GetAttribute("ZoneId") then floors[part:GetAttribute("ZoneId")]=part end
+    end
+    -- The server creates geometry before Ready; wait for all streamed/replicated fields.
+    while #floors<#config.Zones do
+        task.wait(0.1)
+        for _,part in ipairs(world:GetDescendants()) do
+            if part:IsA("BasePart") and part:GetAttribute("ZoneId") then floors[part:GetAttribute("ZoneId")]=part end
+        end
+    end
+    for id,floor in ipairs(floors) do
+        local surface=Instance.new("SurfaceGui"); surface.Name="LocalDustGrid"..id
+        surface.Face=Enum.NormalId.Top; surface.Adornee=floor; surface.CanvasSize=Vector2.new(c.Columns*24,c.Rows*24)
+        surface.LightInfluence=0.5; surface.Parent=player.PlayerGui; frames[id]={}; surfaces[id]=surface
+        for row=1,c.Rows do for column=1,c.Columns do
+            local cell=(row-1)*c.Columns+column; local frame=Instance.new("Frame")
+            frame.Size=UDim2.fromScale(1/c.Columns,1/c.Rows)
+            frame.Position=UDim2.fromScale((column-1)/c.Columns,(row-1)/c.Rows)
+            frame.BorderSizePixel=0
+            local rgb=config.Zones[id].Color; frame.BackgroundColor3=Color3.fromRGB(rgb[1],rgb[2],rgb[3])
+            frame.Parent=surface; frames[id][cell]=frame
+        end end
+    end
+    local ready,queue,revision=false,{},-1
+    local progress={}
+    local function apply(zones,percent)
+        for zoneKey,cells in pairs(zones) do local id=tonumber(zoneKey)
+            for cellKey,left in pairs(cells) do local cell=tonumber(cellKey)
+            if frames[id] and frames[id][cell] then frames[id][cell].BackgroundTransparency=1-left/c.DustPerCell end
+        end end
+        for id,value in pairs(percent or {}) do progress[tonumber(id)]=value end
+    end
+    remotes.CellsChanged.OnClientEvent:Connect(function(zones,percent,incoming)
+        if not ready then table.insert(queue,{zones,percent,incoming}); return end
+        if incoming<=revision then return end
+        revision=incoming; apply(zones,percent)
+    end)
+    local snapshot=remotes.Snapshot:InvokeServer()
+    if not snapshot then task.wait(1.1); snapshot=remotes.Snapshot:InvokeServer() end
+    assert(snapshot,"Server profile not ready; please rejoin")
+    revision=snapshot.Revision
+    for id,z in ipairs(snapshot.Zones) do
+        apply({[id]=z.Cells})
+        local remaining=0
+        for cell,left in ipairs(z.Cells) do
+            remaining=remaining+left
+            if z.Rare[cell] then frames[id][cell].BackgroundColor3=Color3.fromRGB(255,204,93) end
+        end
+        progress[id]=1-remaining/(c.Columns*c.Rows*c.DustPerCell)
+    end
+    for _,delta in ipairs(queue) do if delta[3]>revision then revision=delta[3]; apply(delta[1],delta[2]) end end
+    ready=true; ui:setState(snapshot.State)
+    remotes.Collected.OnClientEvent:Connect(function(position) effects:collected(position) end)
+    local equipped=false; local oldMode,oldMin,oldMax
+    local function setEquipped(enabled)
+        if equipped==enabled then return end
+        equipped=enabled
+        if enabled then
+            oldMode=player.CameraMode; oldMin=player.CameraMinZoomDistance; oldMax=player.CameraMaxZoomDistance
+            player.CameraMode=Enum.CameraMode.LockFirstPerson
+            player.CameraMinZoomDistance=0.5; player.CameraMaxZoomDistance=0.5
+        else
+            player.CameraMode=oldMode or Enum.CameraMode.Classic
+            player.CameraMaxZoomDistance=oldMax or 128; player.CameraMinZoomDistance=oldMin or 0.5
+        end
+        input:setEnabled(enabled); ui.Enabled=enabled; ui:updateHud()
+    end
+    local rayParams=RaycastParams.new(); rayParams.FilterType=Enum.RaycastFilterType.Include; rayParams.FilterDescendantsInstances=floors
+    local lastSent,lastDrive,lastProgress=0,0,0
+    RunService:BindToRenderStep("MoonBrush",Enum.RenderPriority.Camera.Value+1,function()
+        local camera=workspace.CurrentCamera; if not camera then return end
+        local char=player.Character; local hum=char and char:FindFirstChildOfClass("Humanoid")
+        local tool=char and char:FindFirstChildOfClass("Tool")
+        local enabled=tool~=nil and tool:GetAttribute("MoonTool")==true and hum~=nil and hum.Health>0 and hum.SeatPart==nil and not ui.Modal
+        setEquipped(enabled)
+        if tool then local brush=tool:FindFirstChild("WorldBrush"); if brush then brush.LocalTransparencyModifier=enabled and 1 or 0 end end
+        local helmet=char and char:FindFirstChild("EVAHelmet"); if helmet then helmet.LocalTransparencyModifier=enabled and 1 or 0 end
+        local active=enabled and input.held
+        local tier=player:GetAttribute("ToolTier") or 1
+        viewmodel:update(camera,enabled,active,os.clock(),tier)
+        effects:update(active)
+        if hum and hum.SeatPart and hum.SeatPart:IsA("VehicleSeat") and os.clock()-lastDrive>0.1 then
+            lastDrive=os.clock()
+            remotes.Drive:FireServer(ui.Modal and Vector2.zero or Vector2.new(hum.SeatPart.SteerFloat,hum.SeatPart.ThrottleFloat))
+        end
+        if os.clock()-lastProgress>0.5 and char and char:FindFirstChild("HumanoidRootPart") then
+            lastProgress=os.clock(); local point=char.HumanoidRootPart.Position
+            for id,z in ipairs(config.Zones) do
+                surfaces[id].Enabled=(point-Vector3.new(z.X,0,z.Z)).Magnitude<125
+                if math.abs(point.X-z.X)<42 and math.abs(point.Z-z.Z)<42 then ui:setProgress(progress[id] or 0,z.Name) end
+            end
+        end
+        if not active or os.clock()-lastSent<1/c.RequestsPerSecond then return end
+        lastSent=os.clock()
+        local size=camera.ViewportSize; local ray=camera:ViewportPointToRay(size.X/2,size.Y/2)
+        local hit=workspace:Raycast(ray.Origin,ray.Direction*config.Tools[tier].Reach,rayParams)
+        if hit then remotes.Scrub:FireServer(hit.Position) end
+    end)
+end
+return Cleaning
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="23">
+            <Properties>
+              <string name="Name">EffectsController</string>
+              <string name="Source"><![CDATA[--!strict
+local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local Effects = {}
+
+function Effects.new(config)
+    local sound = Instance.new("Sound")
+    sound.Name = "MoonBrushing"
+    sound.SoundId = config.Audio.BrushSoundId
+    sound.Volume, sound.Looped = 0.16, true
+    sound.PlaybackSpeed = 1.7
+    sound.Parent = workspace.CurrentCamera
+    local self = {lastCollection = -math.huge}
+    function self:collected(position)
+        self.lastCollection = os.clock()
+        if sound.SoundId ~= "" and not sound.IsPlaying then sound:Play() end
+        local bead = Instance.new("Part")
+        bead.Name, bead.Shape = "LocalDust", Enum.PartType.Ball
+        bead.Size = Vector3.new(0.12, 0.12, 0.12)
+        bead.Anchored = true
+        bead.CanCollide, bead.CanTouch, bead.CanQuery = false, false, false
+        bead.Color = Color3.fromRGB(219, 195, 149)
+        bead.Position, bead.Parent = position + Vector3.new(0, 0.1, 0), workspace
+        local emitter = Instance.new("ParticleEmitter")
+        emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
+        emitter.Color = ColorSequence.new(bead.Color)
+        emitter.Rate = 0
+        emitter.Lifetime = NumberRange.new(0.2, 0.4)
+        emitter.Speed = NumberRange.new(0.5, 1.5)
+        emitter.SpreadAngle = Vector2.new(60, 60)
+        emitter.Size = NumberSequence.new(0.18)
+        emitter.Parent = bead
+        emitter:Emit(4)
+        local character = Players.LocalPlayer.Character
+        local tank = character and character:FindFirstChild("DustTank")
+        if tank then
+            TweenService:Create(bead, TweenInfo.new(0.35), {Position = tank.Position, Transparency = 1}):Play()
+        end
+        Debris:AddItem(bead, 0.5)
+    end
+    function self:update(active)
+        if not active or os.clock() - self.lastCollection > 0.25 then sound:Stop() end
+    end
+    return self
+end
+
+return Effects
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="24">
+            <Properties>
+              <string name="Name">InputController</string>
+              <string name="Source"><![CDATA[--!strict
+local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local Input = {}
+
+function Input.new()
+    local self = {held = false, enabled = false}
+    UserInputService.WindowFocusReleased:Connect(function() self.held = false end)
+    GuiService.MenuOpened:Connect(function() self.held = false end)
+    function self:setEnabled(enabled)
+        self.enabled, self.held = enabled, false
+        ContextActionService:UnbindAction("MoonScrub")
+        if not enabled then return end
+        ContextActionService:BindAction("MoonScrub", function(_, state)
+            self.held = state == Enum.UserInputState.Begin or state == Enum.UserInputState.Change
+            return Enum.ContextActionResult.Sink
+        end, true, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonR2)
+        ContextActionService:SetTitle("MoonScrub", "POETS")
+        ContextActionService:SetPosition("MoonScrub", UDim2.fromScale(0.78, 0.55))
+    end
+    return self
+end
+
+return Input
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="25">
+            <Properties>
+              <string name="Name">UIController</string>
+              <string name="Source"><![CDATA[--!nonstrict
+local Players=game:GetService("Players")
+local UserInputService=game:GetService("UserInputService")
+local ContextActionService=game:GetService("ContextActionService")
+local GuiService=game:GetService("GuiService")
+local TweenService=game:GetService("TweenService")
+local RS=game:GetService("ReplicatedStorage")
+local Rules=require(RS.MoonScrubbers.Shared.GameRules)
+local UI={}
+local C={Bg=Color3.fromRGB(13,20,34),Panel=Color3.fromRGB(24,35,53),Card=Color3.fromRGB(33,47,66),
+    Teal=Color3.fromRGB(75,226,204),Gold=Color3.fromRGB(255,195,87),Text=Color3.fromRGB(232,240,247),Muted=Color3.fromRGB(151,171,193)}
+local function make(class,parent,properties)
+    local item=Instance.new(class)
+    for key,value in pairs(properties or {}) do item[key]=value end
+    item.Parent=parent; return item
+end
+local function corner(item,radius) make("UICorner",item,{CornerRadius=UDim.new(0,radius or 10)}) end
+local function text(parent,content,size,color)
+    return make("TextLabel",parent,{BackgroundTransparency=1,Text=content,TextSize=size or 15,
+        Font=Enum.Font.GothamMedium,TextColor3=color or C.Text,TextXAlignment=Enum.TextXAlignment.Left,
+        TextWrapped=true,Size=UDim2.new(1,0,0,26)})
+end
+local function button(parent,title,callback,color)
+    local b=make("TextButton",parent,{Text=title,TextSize=14,Font=Enum.Font.GothamBold,
+        BackgroundColor3=color or C.Teal,TextColor3=C.Bg,Size=UDim2.fromOffset(150,38),
+        BorderSizePixel=0,AutoButtonColor=true,Selectable=true,Modal=false})
+    corner(b,8); b.Activated:Connect(callback); return b
+end
+local function money(value) return string.format("%s cr",tostring(math.floor(value or 0))) end
+function UI.new(config,remotes)
+    local player=Players.LocalPlayer
+    local self=setmetatable({Config=config,Remotes=remotes,State=nil,Modal=true,Page="Welcome",Enabled=false,ToastId=0}, {__index=UI})
+    local gui=make("ScreenGui",player:WaitForChild("PlayerGui"),{Name="MoonHUD",ResetOnSpawn=false,
+        IgnoreGuiInset=false,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
+    self.Gui=gui
+    local header=make("Frame",gui,{Position=UDim2.fromOffset(12,10),Size=UDim2.new(1,-24,0,90),BackgroundColor3=C.Bg,BorderSizePixel=0})
+    corner(header)
+    local brand=text(header,"MOON SCRUBBERS  /  LSD",17,C.Teal); brand.Position=UDim2.fromOffset(14,7); brand.Size=UDim2.new(0.6,-20,0,24)
+    self.Cash=text(header,"0 cr",20,C.Gold); self.Cash.TextXAlignment=Enum.TextXAlignment.Right
+    self.Cash.Position=UDim2.new(0.6,0,0,7); self.Cash.Size=UDim2.new(0.4,-14,0,24)
+    self.Tank=text(header,"TANK  0 / 50",14); self.Tank.Position=UDim2.fromOffset(14,35); self.Tank.Size=UDim2.new(0.55,-14,0,21)
+    self.Status=text(header,"Connecting to LSD dispatch…",11,C.Muted); self.Status.Position=UDim2.fromOffset(14,61); self.Status.Size=UDim2.new(1,-28,0,20)
+    local track=make("Frame",header,{Position=UDim2.new(0.57,0,0,41),Size=UDim2.new(0.4,0,0,9),BackgroundColor3=C.Card,BorderSizePixel=0})
+    corner(track,5); self.Fill=make("Frame",track,{Size=UDim2.fromScale(0,1),BackgroundColor3=C.Teal,BorderSizePixel=0}); corner(self.Fill,5)
+    self.Crosshair=make("TextLabel",gui,{Position=UDim2.fromScale(0.5,0.5),AnchorPoint=Vector2.new(0.5,0.5),
+        Size=UDim2.fromOffset(15,15),Text="+",TextColor3=C.Teal,TextSize=22,BackgroundTransparency=1})
+    local nav=make("ScrollingFrame",gui,{Position=UDim2.new(0,12,1,-58),Size=UDim2.new(1,-24,0,46),
+        BackgroundColor3=C.Bg,BorderSizePixel=0,CanvasSize=UDim2.fromOffset(1160,0),ScrollBarThickness=3,
+        ScrollingDirection=Enum.ScrollingDirection.X})
+    corner(nav)
+    make("UIListLayout",nav,{FillDirection=Enum.FillDirection.Horizontal,Padding=UDim.new(0,6),SortOrder=Enum.SortOrder.LayoutOrder})
+    for index,page in ipairs({"Brush","Home","Sell","Shop","Base","Zones","Robots","Vehicles","Capsules","Missions","Crew"}) do
+        local b=button(nav,page,function()
+            if page=="Brush" then
+                local char=player.Character; local hum=char and char:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    if char:FindFirstChildOfClass("Tool") then hum:UnequipTools()
+                    else local bag=player:FindFirstChild("Backpack"); local tool=bag and bag:FindFirstChildOfClass("Tool")
+                        if tool then hum:EquipTool(tool) end end
+                end
+                self:close()
+            elseif page=="Home" then remotes.Action:FireServer("Home"); self:close()
+            elseif page=="Sell" then remotes.Action:FireServer("Sell")
+            else self:open(page) end
+        end,(page=="Sell") and C.Gold or C.Teal)
+        b.Size=UDim2.fromOffset(98,40); b.LayoutOrder=index
+    end
+    self.Hint=text(gui,"Equip your brush from the backpack. Clean → HOME → gold shipping pad → SELL.",13,C.Text)
+    self.Hint.BackgroundColor3=C.Bg; self.Hint.BackgroundTransparency=0.15
+    self.Hint.Position=UDim2.new(0.1,0,1,-105); self.Hint.Size=UDim2.new(0.8,0,0,37); corner(self.Hint,8)
+    self.Panel=make("Frame",gui,{Position=UDim2.fromScale(0.5,0.49),AnchorPoint=Vector2.new(0.5,0.5),
+        Size=UDim2.new(1,-36,1,-220),BackgroundColor3=C.Panel,BorderSizePixel=0,Visible=true})
+    make("UISizeConstraint",self.Panel,{MaxSize=Vector2.new(850,640),MinSize=Vector2.new(280,140)}); corner(self.Panel,14)
+    self.Title=text(self.Panel,"LUNAR SURFACE DEPARTMENT",20,C.Teal); self.Title.Position=UDim2.fromOffset(16,12); self.Title.Size=UDim2.new(1,-90,0,32)
+    local close=button(self.Panel,"X",function() self:close() end,C.Gold)
+    close.Modal=true
+    close.Size=UDim2.fromOffset(38,32); close.Position=UDim2.new(1,-50,0,12)
+    self.List=make("ScrollingFrame",self.Panel,{Position=UDim2.fromOffset(12,54),Size=UDim2.new(1,-24,1,-66),
+        BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=5,AutomaticCanvasSize=Enum.AutomaticSize.Y,CanvasSize=UDim2.new()})
+    make("UIListLayout",self.List,{Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder})
+    self.Toast=text(gui,"",16,C.Gold); self.Toast.BackgroundColor3=C.Bg; self.Toast.BackgroundTransparency=0.05
+    self.Toast.Position=UDim2.new(0.1,0,0,109); self.Toast.Size=UDim2.new(0.8,0,0,54); self.Toast.Visible=false; self.Toast.ZIndex=8; corner(self.Toast)
+    remotes.Notice.OnClientEvent:Connect(function(message) self:notice(message) end)
+    remotes.OpenPanel.OnClientEvent:Connect(function(page) self:open(page) end)
+    remotes.State.OnClientEvent:Connect(function(state) self:setState(state) end)
+    remotes.RoomCode.OnClientEvent:Connect(function(code) self:notice("FRIEND CODE: "..code.." — travelling in 8 seconds"); self.Code=code; self:open("Crew") end)
+    remotes.Capsule.OnClientEvent:Connect(function(result) self:reveal(result) end)
+    player:GetAttributeChangedSignal("Dust"):Connect(function() self:updateHud() end)
+    player:GetAttributeChangedSignal("Cash"):Connect(function() self:updateHud() end)
+    player:GetAttributeChangedSignal("TankCapacity"):Connect(function() self:updateHud() end)
+    ContextActionService:BindAction("MoonMenu",function(_,state)
+        if state==Enum.UserInputState.Begin then
+            if self.Modal then self:close() else self:open("Shop") end
+        end
+        return Enum.ContextActionResult.Sink
+    end,false,Enum.KeyCode.M,Enum.KeyCode.ButtonY)
+    UserInputService.InputBegan:Connect(function(event,processed)
+        if processed or UserInputService:GetFocusedTextBox() then return end
+        if event.KeyCode==Enum.KeyCode.H then self:send("Home"); self:close() end
+    end)
+    self:render()
+    return self
+end
+function UI:send(kind,index) self.Pending=true; self.Remotes.Action:FireServer(kind,index) end
+function UI:notice(message)
+    self.ToastId=self.ToastId+1; local id=self.ToastId
+    self.Toast.Text=tostring(message); self.Toast.Visible=true
+    task.delay(6,function() if self.ToastId==id then self.Toast.Visible=false end end)
+end
+function UI:open(page)
+    self.Page=page; self.Modal=true; self.Panel.Visible=true; self:render()
+    local first=self.List:FindFirstChildWhichIsA("TextButton",true)
+    if first then GuiService.SelectedObject=first end
+end
+function UI:close() self.Modal=false; self.Panel.Visible=false; GuiService.SelectedObject=nil end
+function UI:card(title,description,action,callback,color)
+    local f=make("Frame",self.List,{Size=UDim2.new(1,-8,0,112),BackgroundColor3=C.Card,BorderSizePixel=0})
+    corner(f)
+    local titleLabel=text(f,title,16,color or C.Text); titleLabel.Position=UDim2.fromOffset(12,8); titleLabel.Size=UDim2.new(1,-24,0,23)
+    local desc=text(f,description,12,C.Muted); desc.Position=UDim2.fromOffset(12,34); desc.Size=UDim2.new(1,-24,0,30)
+    if action then local b=button(f,action,callback,color); b.Position=UDim2.fromOffset(12,69); b.Size=UDim2.new(1,-24,0,32) end
+    return f
+end
+function UI:render()
+    for _,child in ipairs(self.List:GetChildren()) do if child:IsA("Frame") or child:IsA("TextBox") then child:Destroy() end end
+    self.Title.Text=self.Page=="Welcome" and "YOUR LUNAR CAREER STARTS HERE" or string.upper(self.Page).." / LSD DISPATCH"
+    local p=self.State; local c=self.Config
+    if not p then self:card("Contacting dispatch…","Loading your profile and base. Please wait."); return end
+    local function buy(kind,index)
+        local price,name=Rules.offer(p,c,kind,index)
+        return price and (name.." • "..money(price)) or "MAX LEVEL",function() self:send(kind,index) end
+    end
+    if self.Page=="Welcome" then
+        self:card("The budget only covered a toothbrush.","Your personal base is behind you. Clean the dusty plains, ship dust from your gold depot pad, then upgrade.","START MY SHIFT",function() self:close() end)
+        self:card("First mission: become slightly less underfunded","1 Equip brush. 2 Look down, hold + scrub. 3 HOME. 4 Walk to gold pad and SELL. 5 SHOP.","TRAVEL TO DUSTY PLAINS",function() self:send("Travel",1); self:close() end)
+        self:card("Daily delivery waiting","Claim free credits and a capsule to start your shift.","CLAIM DAILY DELIVERY",function() self:send("Daily") end,C.Gold)
+        self:card("Solo / Public / Friends","Choose a crew mode; Studio supports local test play.","CREW MENU",function() self:open("Crew") end)
+    elseif self.Page=="Shop" then
+        for _,kind in ipairs({"Tool","Suit","Tank"}) do
+            local label,callback=buy(kind)
+            local current=kind=="Tool" and c.Tools[p.Tool].Name or kind=="Suit" and c.Suits[p.Suit].Name or (p.Capacity.." dust capacity")
+            self:card(kind.." / "..current,"Purchase at your base. Upgrades are permanent and automatically equipped.",label,callback)
+        end
+    elseif self.Page=="Base" then
+        for _,b in ipairs(c.Buildings) do
+            local label,callback=buy(b.Id)
+            local effects={Depot="+10% sale value per level; robot storage increases.",Workshop="+8% manual cleaning speed per level.",Garage="+4% vehicle speed per level.",HQ="+5% all shipment earnings per level.",Radio="Unlocks the next robot tier (up to tier 4)."}
+            self:card(b.Name.." / LEVEL "..p.Buildings[b.Id],effects[b.Id],label,callback)
+        end
+        self:card("SECONDARY DEPOT","Radio level 2 unlocks remote shipping from the field beacon.","SHIP AT FIELD BEACON",function() self:send("FieldSell") end,C.Gold)
+    elseif self.Page=="Zones" then
+        local label,callback=buy("Zone"); self:card("Unlock the next contract","Zones require credits and the listed suit level.",label,callback,C.Gold)
+        for id,z in ipairs(c.Zones) do
+            self:card(z.Name..(id>p.Zone and " / LOCKED" or " / OPEN"),"Dust value x"..z.Value.." • suit level "..z.Suit.." • "..money(z.Cost),
+                id<=p.Zone and "TRAVEL" or "LOCKED",function() if id<=p.Zone then self:send("Travel",id); self:close() end end)
+        end
+    elseif self.Page=="Robots" then
+        self:card("AUTOMATION / "..#p.Robots.." of 8 robots","Robots scrub real shared dust and automatically deliver payment. Offline earnings: 15% rate, capped at 3 hours.")
+        for id,r in ipairs(c.Robots) do local label,callback=buy("Robot",id)
+            self:card(r.Name,r.Rate.." dust/sec • requires radio level "..math.max(0,id-1),label,callback) end
+        for id,z in ipairs(c.Zones) do if id<=p.Zone then
+            self:card(z.Name,p.RobotZone==id and "Current robot work zone" or "Send all robots to this zone","ASSIGN ROBOTS",function() self:send("RobotZone",id) end)
+        end end
+    elseif self.Page=="Vehicles" then
+        local label,callback=buy("Vehicle"); self:card("GARAGE / "..(p.Vehicle>0 and c.Vehicles[p.Vehicle].Name or "No vehicle"),"Vehicles have independent tanks. Drive to your gold depot pad to unload.",label,callback)
+        self:card("DEPLOY CURRENT VEHICLE","Return to base first. Drive with WASD, gamepad stick or touch vehicle controls. Jump to exit.","DEPLOY",function() self:send("SpawnVehicle"); self:close() end,C.Gold)
+        self:card("VEHICLE TANK",string.format("%.1f dust stored",p.VehicleDust))
+    elseif self.Page=="Capsules" then
+        self:card("DELIVERY CAPSULES / "..p.Capsules,"Common 60% • Rare 25% • Epic 10% • Legendary 4% • Mythic 1%","OPEN CAPSULE",function() self:send("Open") end,C.Gold)
+        self:card("PITY / "..p.Pity.." of "..c.Pity,"After 19 consecutive Common drops: Rare 62.5%, Epic 25%, Legendary 10%, Mythic 2.5%. Cosmetic finishes only.")
+        local label,callback=buy("Capsule"); self:card("EXTRA DELIVERY","Buy with earned credits. No Robux or paid random rewards are enabled.",label,callback)
+        self:card("DUPLICATE RECYCLING / "..p.Fragments.." fragments","Duplicates become 10 × rarity-tier fragments. Craft one capsule for 100 fragments.","CRAFT CAPSULE",function() self:send("Craft") end)
+        for id,r in ipairs(c.Rarities) do
+            self:card(r.Name.." EVA FINISH",p.Cosmetics[tostring(id)] and "Owned • changes suit and brush tint" or "Not yet discovered",
+                p.Equipped==id and "EQUIPPED" or "EQUIP",function() self:send("Cosmetic",id) end,Color3.fromRGB(r.Color[1],r.Color[2],r.Color[3]))
+        end
+    elseif self.Page=="Missions" then
+        self:card("DAILY DELIVERY / STREAK "..p.Streak,"Once per UTC day: credits + one capsule. Streak bonuses cap at day 7.","CLAIM LOGIN REWARD",function() self:send("Daily") end,C.Gold)
+        self:card("DAILY / "..math.floor(p.DailyClean).." / 250 dust","400 credits + one capsule. "..(p.DailyClaimed and "Already claimed." or "Keep scrubbing."),"CLAIM DAILY MISSION",function() self:send("DailyMission") end)
+        self:card("WEEKLY / "..math.floor(p.WeeklyClean).." / 2000 dust","3,000 credits + three capsules. "..(p.WeeklyClaimed and "Already claimed." or "Robots and vehicles count."),"CLAIM WEEKLY MISSION",function() self:send("WeeklyMission") end)
+        self:card("CAREER ALBUM",math.floor(p.TotalCleaned).." dust cleaned • "..p.Shipments.." shipments • "..money(p.TotalEarned).." earned")
+        self:card("ACHIEVEMENTS",(p.Shipments>0 and "[DONE] First Shipment" or "[ ] First Shipment").." / "..(#p.Robots>0 and "[DONE] Management" or "[ ] Management").." / "..(p.Zone==5 and "[DONE] Moon Master" or "[ ] Moon Master"))
+        self:card("PRESTIGE / "..p.Prestige,"Reset cash, upgrades, zones and robots for +25% permanent earnings. Keep cosmetics, fragments and capsules. Requires 250,000 credits.","REHIRE ME…",function() self:open("ConfirmPrestige") end,C.Gold)
+    elseif self.Page=="ConfirmPrestige" then
+        self:card("CONFIRM CAREER RESET","This spends your current progression and starts a new career with a permanent earnings bonus.","CONFIRM PRESTIGE",function() self:send("Prestige"); self:open("Missions") end,C.Gold)
+        self:card("KEEP MY CURRENT CAREER","No changes will be made.","CANCEL",function() self:open("Missions") end)
+    elseif self.Page=="Crew" then
+        self:card("PUBLIC CREW / UP TO 4 PLAYERS","Clean together for up to +15% dust value when crew members are within 25 studs.","PUBLIC",function() self.Remotes.Lobby:FireServer("Public"); self:close() end)
+        self:card("SOLO CONTRACT","Reserve a fresh private server. Published experiences only.","PLAY SOLO",function() self.Remotes.Lobby:FireServer("Solo") end)
+        self:card("FRIENDS CONTRACT",(self.Code or p.FriendCode) and ("ROOM CODE: "..(self.Code or p.FriendCode)) or "Create a room and share the eight-character code. Code lasts 24 hours.","CREATE FRIEND ROOM",function() self.Remotes.Lobby:FireServer("Friends") end)
+        local box=make("TextBox",self.List,{Size=UDim2.new(1,-8,0,44),PlaceholderText="Enter friend code",Text="",TextColor3=C.Text,BackgroundColor3=C.Card,TextSize=18,Font=Enum.Font.Gotham,ClearTextOnFocus=false})
+        corner(box)
+        self:card("JOIN A FRIEND","Enter their code above. Codes are shared manually; no direct invite integration yet.","JOIN",function() self.Remotes.Lobby:FireServer("Join",box.Text:upper():gsub("%s", "")) end)
+    end
+end
+function UI:setState(state)
+    self.State=state; self:updateHud()
+    -- Avoid destroying focused gamepad controls or the friend-code text field on periodic updates.
+    if self.Modal and (self.Pending or not self.RenderedPage) then self:render(); self.RenderedPage=true end
+    self.Pending=false
+end
+function UI:updateHud()
+    local player=Players.LocalPlayer
+    local dust=player:GetAttribute("Dust") or 0; local cap=player:GetAttribute("TankCapacity") or 50
+    self.Cash.Text=money(player:GetAttribute("Cash") or 0)
+    self.Tank.Text=string.format("TANK  %.1f / %d",dust,cap)
+    self.Fill.Size=UDim2.fromScale(math.clamp(dust/cap,0,1),1)
+    self.Fill.BackgroundColor3=dust>=cap-0.001 and C.Gold or C.Teal
+    local p=self.State
+    self.Status.Text=p and (p.Event.."  /  "..(p.SaveStatus or "")) or "Loading profile…"
+    if dust>=cap-0.001 then self.Hint.Text="TANK FULL → H / HOME → gold shipping pad → SELL. M / Y opens menus."
+    elseif p and p.Tutorial<3 then self.Hint.Text="Equip BRUSH • look down • hold and sweep. M / Y: menu. H: home. Ship on the gold pad."
+    else self.Hint.Text="M / Y: menus • H: home. Clean → ship → upgrade. ZONES unlock better dust." end
+    self.Crosshair.Visible=self.Enabled and not self.Modal
+end
+function UI:setProgress(value,zoneName)
+    if not self.Modal and self.State then self.Status.Text=string.format("%s • %.1f%% clean  /  %s",zoneName or "Lunar surface",value*100,self.State.Event) end
+end
+function UI:reveal(result)
+    self:open("Capsules")
+    local overlay=make("Frame",self.Gui,{Size=UDim2.fromScale(1,1),BackgroundColor3=C.Bg,BackgroundTransparency=0.05,ZIndex=20})
+    local r=self.Config.Rarities[result.Rarity]; local color=Color3.fromRGB(r.Color[1],r.Color[2],r.Color[3])
+    local title=text(overlay,"DELIVERY INCOMING…",28,C.Gold); title.Size=UDim2.fromScale(0.8,0.25); title.Position=UDim2.fromScale(0.1,0.25); title.TextXAlignment=Enum.TextXAlignment.Center; title.ZIndex=21
+    local capsule=make("Frame",overlay,{AnchorPoint=Vector2.new(0.5,0.5),Position=UDim2.fromScale(0.5,0.57),Size=UDim2.fromOffset(100,120),BackgroundColor3=C.Teal,ZIndex=21})
+    corner(capsule,30)
+    task.spawn(function()
+        for i=1,12 do capsule.Rotation=(i%2==0 and 1 or -1)*(i+3); task.wait(0.07) end
+        capsule.Rotation=0; capsule.BackgroundColor3=color
+        TweenService:Create(capsule,TweenInfo.new(0.4),{Size=UDim2.fromOffset(150,160)}):Play()
+        title.Text=result.Name..(result.Duplicate and "\nDUPLICATE → fragments" or "\nNEW FINISH UNLOCKED"); title.TextColor3=color
+        task.wait(2.2); overlay:Destroy(); self:render()
+    end)
+end
+return UI
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="26">
+            <Properties>
+              <string name="Name">ViewmodelController</string>
+              <string name="Source"><![CDATA[--!nonstrict
+local V={}
+function V.new(config)
+    local self={Model=Instance.new("Model"),Parts={},Tier=0}
+    self.Model.Name="LSD First Person Tool"
+    function self:build(tier,cosmetic)
+        self.Model:ClearAllChildren(); self.Parts={}; self.Tier=tier; self.Cosmetic=cosmetic
+        local function part(name,size,color,offset,shape)
+            local p=Instance.new("Part"); p.Name=name; p.Size=size; p.Color=color
+            p.Anchored=true; p.CanCollide=false; p.CanQuery=false; p.CanTouch=false; p.CastShadow=false
+            if shape then p.Shape=shape end
+            p.Parent=self.Model; table.insert(self.Parts,{Part=p,Offset=offset})
+        end
+        local rgb=cosmetic>0 and config.Rarities[cosmetic].Color or {70,205,195}
+        local tint=Color3.fromRGB(rgb[1],rgb[2],rgb[3])
+        part("EVA Glove",Vector3.new(0.3,0.35,0.45),Color3.fromRGB(235,237,240),CFrame.new(0,-0.1,0))
+        if tier<6 then
+            part("Handle",Vector3.new(0.1+tier*0.015,0.1,1+tier*0.08),tint,CFrame.new(0,0,-0.4))
+            part("Brush Head",Vector3.new(0.2+tier*0.12,0.12,0.3+tier*0.08),tint,CFrame.new(0,0,-1))
+            part("Bristles",Vector3.new(0.18+tier*0.12,0.14,0.25+tier*0.08),Color3.fromRGB(236,225,184),CFrame.new(0,0.12,-1))
+        else
+            part("Vacuum Body",Vector3.new(0.45,0.45,0.8),tint,CFrame.new(0,0,-0.45))
+            part("Nozzle",Vector3.new(0.2,0.2,1),Color3.fromRGB(95,111,140),CFrame.new(0,0,-1.15))
+            if tier==8 then part("Laser Core",Vector3.new(0.08,0.08,1.4),Color3.fromRGB(190,125,255),CFrame.new(0,0,-1.7)) end
+        end
+    end
+    function self:update(camera,enabled,held,time,tier)
+        local cosmetic=game:GetService("Players").LocalPlayer:GetAttribute("CosmeticTier") or 0
+        if tier~=self.Tier or cosmetic~=self.Cosmetic then self:build(tier,cosmetic) end
+        self.Model.Parent=enabled and camera or nil
+        if not enabled then return end
+        local stroke=held and math.sin(time*(tier<6 and 24 or 35)) or 0
+        local pose=camera.CFrame*CFrame.new(0.55+stroke*(tier<6 and 0.12 or 0.02),-0.48,-0.85)*CFrame.Angles(math.rad(-12),math.rad(-15+stroke*6),math.rad(-12))
+        for _,item in ipairs(self.Parts) do item.Part.CFrame=pose*item.Offset end
+    end
+    return self
+end
+return V
+]]></string>
+            </Properties>
+          </Item>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+</roblox>

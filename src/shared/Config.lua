@@ -1,28 +1,60 @@
---!strict
+--!nonstrict
 local Config = {
-    MaxPlayers = 4,
-    Cleaning = {
-        CellSize = 4,
-        Columns = 16,
-        Rows = 16,
-        DustPerCell = 4,
-        DustPerSecond = 6,
-        MaxReach = 10,
-        RequestsPerSecond = 10,
-        MinStrokeDistance = 0.12,
-        MaxStrokeDistance = 5,
-        BrushRadius = 1.6,
-        ReplicationInterval = 0.15,
+    Version = "0.2.0-playable-alpha", MaxPlayers = 4, Gravity = 32.7,
+    Cleaning = {CellSize=4, Columns=20, Rows=20, DustPerCell=6, RequestsPerSecond=10,
+        ReplicationInterval=0.15, MinStrokeDistance=0.08, MaxStrokeDistance=9, RespawnSeconds=100},
+    Audio = {BrushSoundId="rbxasset://sounds/action_footsteps_plastic.mp3"},
+    Tools = {
+        {Name="Toothbrush",Cost=0,Rate=5,Radius=1.6,Reach=11},
+        {Name="Paintbrush",Cost=100,Rate=9,Radius=2,Reach=12},
+        {Name="Hand Brush",Cost=400,Rate=16,Radius=3,Reach=13},
+        {Name="Broom",Cost=1400,Rate=28,Radius=4,Reach=14},
+        {Name="Lunar Mop",Cost=4200,Rate=45,Radius=5,Reach=15},
+        {Name="Handheld Vacuum",Cost=12000,Rate=70,Radius=6,Reach=18},
+        {Name="Leaf Blower",Cost=32000,Rate=110,Radius=8,Reach=22},
+        {Name="Laser Vacuum",Cost=85000,Rate=180,Radius=10,Reach=26},
     },
-    StartingStats = { TankCapacity = 50, ToolId = "Toothbrush" },
-    World = { FloorY = 0, SpawnHeight = 5 },
-    -- Set this to an audio asset you own/have permission to use. Empty is silent.
-    Audio = { BrushSoundId = "" },
+    Suits = {
+        {Name="Budget EVA",Cost=0,Speed=17,Capacity=1,Bonus=1,Color={225,230,235}},
+        {Name="Reinforced",Cost=600,Speed=19,Capacity=1.5,Bonus=1.1,Color={240,175,75}},
+        {Name="LSD Professional",Cost=4500,Speed=22,Capacity=2,Bonus=1.25,Color={75,200,190}},
+        {Name="Quantum EVA",Cost=25000,Speed=26,Capacity=3,Bonus=1.5,Color={170,120,250}},
+    },
+    Zones = {
+        {Name="Dusty Plains",X=0,Z=110,Cost=0,Suit=1,Value=1,Color={160,148,125}},
+        {Name="Impact Craters",X=130,Z=110,Cost=1400,Suit=2,Value=3,Color={178,128,90}},
+        {Name="Dark Side",X=-130,Z=110,Cost=6500,Suit=2,Value=7,Color={100,100,150}},
+        {Name="Abandoned Outpost",X=130,Z=245,Cost=24000,Suit=3,Value=15,Color={95,153,156}},
+        {Name="Crystal Caverns",X=-130,Z=245,Cost=70000,Suit=4,Value=35,Color={157,101,196}},
+    },
+    Robots = {
+        {Name="Dusty McDustface",Cost=900,Rate=1.2},
+        {Name="Union Rep 3000",Cost=4000,Rate=4},
+        {Name="Overqualified Bot",Cost=14000,Rate=12},
+        {Name="Vacuum Drone",Cost=45000,Rate=30},
+    },
+    Vehicles = {
+        {Name="Cleaning Cart",Cost=2500,Speed=25,Capacity=200,Radius=4,Rate=20},
+        {Name="Cleaning Tractor",Cost=9000,Speed=30,Capacity=500,Radius=6,Rate=45},
+        {Name="Street Sweeper",Cost=24000,Speed=34,Capacity=1200,Radius=8,Rate=85},
+        {Name="Lunar Buggy",Cost=55000,Speed=45,Capacity=2200,Radius=10,Rate=130},
+        {Name="Heavy Scrubber",Cost=120000,Speed=30,Capacity=5000,Radius=13,Rate=220},
+        {Name="Cleaning Starship",Cost=300000,Speed=55,Capacity=10000,Radius=18,Rate=400},
+    },
+    Buildings = {
+        {Id="Depot",Name="Shipping Depot",Cost=250},
+        {Id="Workshop",Name="Workshop",Cost=400},
+        {Id="Garage",Name="Garage",Cost=500},
+        {Id="HQ",Name="Crew Headquarters",Cost=350},
+        {Id="Radio",Name="Radio Tower",Cost=300},
+    },
+    Rarities = {
+        {Name="Common",Weight=60,Color={180,190,205}},
+        {Name="Rare",Weight=25,Color={70,165,255}},
+        {Name="Epic",Weight=10,Color={180,100,245}},
+        {Name="Legendary",Weight=4,Color={255,188,65}},
+        {Name="Mythic",Weight=1,Color={255,85,135}},
+    },
+    CapsuleCost=350, Pity=20, PrestigeCost=250000, OfflineLimit=10800,
 }
-local function freeze(value)
-    for _, child in pairs(value) do
-        if type(child) == "table" then freeze(child) end
-    end
-    return table.freeze(value)
-end
-return freeze(Config)
+return Config

@@ -1,0 +1,672 @@
+<roblox version="4">
+  <Item class="ReplicatedStorage" referent="0">
+    <Properties>
+      <string name="Name">ReplicatedStorage</string>
+    </Properties>
+    <Item class="Folder" referent="1">
+      <Properties>
+        <string name="Name">MoonScrubbers</string>
+      </Properties>
+      <Item class="Folder" referent="2">
+        <Properties>
+          <string name="Name">Shared</string>
+        </Properties>
+        <Item class="ModuleScript" referent="3">
+          <Properties>
+            <string name="Name">Config</string>
+            <string name="Source"><![CDATA[--!strict
+local Config = {
+    MaxPlayers = 4,
+    Cleaning = {
+        CellSize = 4,
+        Columns = 16,
+        Rows = 16,
+        DustPerCell = 4,
+        DustPerSecond = 6,
+        MaxReach = 10,
+        RequestsPerSecond = 10,
+        MinStrokeDistance = 0.12,
+        MaxStrokeDistance = 5,
+        BrushRadius = 1.6,
+        ReplicationInterval = 0.15,
+    },
+    StartingStats = { TankCapacity = 50, ToolId = "Toothbrush" },
+    World = { FloorY = 0, SpawnHeight = 5 },
+    -- Set this to an audio asset you own/have permission to use. Empty is silent.
+    Audio = { BrushSoundId = "" },
+}
+local function freeze(value)
+    for _, child in pairs(value) do
+        if type(child) == "table" then freeze(child) end
+    end
+    return table.freeze(value)
+end
+return freeze(Config)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="4">
+          <Properties>
+            <string name="Name">Grid</string>
+            <string name="Source"><![CDATA[--!strict
+-- Pure grid math. No Parts, networking, or Roblox services.
+local Grid = {}
+
+function Grid.index(column, row, columns)
+    return (row - 1) * columns + column
+end
+
+function Grid.cellAt(x, z, cellSize, columns, rows)
+    local column = math.floor((x + columns * cellSize / 2) / cellSize) + 1
+    local row = math.floor((z + rows * cellSize / 2) / cellSize) + 1
+    if column < 1 or column > columns or row < 1 or row > rows then return nil end
+    return Grid.index(column, row, columns)
+end
+
+function Grid.cellsWithin(x, z, radius, cellSize, columns, rows)
+    local result = {}
+    for row = 1, rows do
+        for column = 1, columns do
+            local left = (column - 1) * cellSize - columns * cellSize / 2
+            local top = (row - 1) * cellSize - rows * cellSize / 2
+            local nearestX = math.max(left, math.min(x, left + cellSize))
+            local nearestZ = math.max(top, math.min(z, top + cellSize))
+            if (nearestX - x)^2 + (nearestZ - z)^2 <= radius^2 then
+                table.insert(result, Grid.index(column, row, columns))
+            end
+        end
+    end
+    return result
+end
+
+function Grid.collect(cells, ids, budget, tank, capacity)
+    local remaining = math.max(0, math.min(budget, capacity - tank))
+    local collected, changes = 0, {}
+    for _, id in ipairs(ids) do
+        local available = cells[id] or 0
+        local amount = math.min(available, remaining)
+        if amount > 0 then
+            cells[id] = available - amount
+            changes[id] = cells[id]
+            remaining = remaining - amount
+            collected = collected + amount
+        end
+        if remaining <= 0 then break end
+    end
+    return collected, changes
+end
+
+function Grid.finiteVector(x, y, z)
+    for _, value in ipairs({x, y, z}) do
+        if type(value) ~= "number" or value ~= value or math.abs(value) == math.huge then
+            return false
+        end
+    end
+    return true
+end
+
+return Grid
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="ServerScriptService" referent="5">
+    <Properties>
+      <string name="Name">ServerScriptService</string>
+    </Properties>
+    <Item class="Folder" referent="6">
+      <Properties>
+        <string name="Name">MoonScrubbers</string>
+      </Properties>
+      <Item class="Script" referent="7">
+        <Properties>
+          <string name="Name">Bootstrap</string>
+          <token name="RunContext">0</token>
+          <string name="Source"><![CDATA[--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local root = ReplicatedStorage:WaitForChild("MoonScrubbers")
+local Config = require(root.Shared.Config)
+
+local remotesFolder = Instance.new("Folder")
+remotesFolder.Name = "Remotes"
+remotesFolder.Parent = root
+local remotes = {}
+for name, class in pairs({Scrub = "RemoteEvent", Collected = "RemoteEvent", CellsChanged = "RemoteEvent", Snapshot = "RemoteFunction"}) do
+    local remote = Instance.new(class)
+    remote.Name, remote.Parent = name, remotesFolder
+    remotes[name] = remote
+end
+
+-- Isolated prototype geometry; never clears an existing map or changes gravity.
+assert(not workspace:FindFirstChild("MoonScrubbersPrototype"), "Prototype already exists")
+local world = Instance.new("Folder")
+world.Name, world.Parent = "MoonScrubbersPrototype", workspace
+local floor = Instance.new("Part")
+floor.Name = "CleanSurface"
+floor.Anchored = true
+floor.Size = Vector3.new(Config.Cleaning.Columns * Config.Cleaning.CellSize, 1, Config.Cleaning.Rows * Config.Cleaning.CellSize)
+floor.Position = Vector3.new(0, Config.World.FloorY - 0.5, 0)
+floor.Material = Enum.Material.Slate
+floor.Color = Color3.fromRGB(82, 91, 108)
+floor.Parent = world
+local spawn = Instance.new("SpawnLocation")
+spawn.Name = "MoonSpawn"
+spawn.Size = Vector3.new(4, 1, 4)
+spawn.Anchored, spawn.CanCollide, spawn.CanQuery = true, false, false
+spawn.Transparency = 1
+spawn.Position = Vector3.new(0, Config.World.SpawnHeight, 0)
+spawn.Neutral, spawn.Duration = true, 0
+spawn.Parent = world
+
+require(script.Parent.Services.PlayerStateService).start(Config)
+require(script.Parent.Services.CleaningService).start(Config, floor, remotes)
+root:SetAttribute("Ready", true)
+print("[Moon Scrubbers] Step 2 ready: equip toothbrush, look down, hold and sweep")
+]]></string>
+        </Properties>
+      </Item>
+      <Item class="Folder" referent="8">
+        <Properties>
+          <string name="Name">Services</string>
+        </Properties>
+        <Item class="ModuleScript" referent="9">
+          <Properties>
+            <string name="Name">CleaningService</string>
+            <string name="Source"><![CDATA[--!strict
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Grid = require(ReplicatedStorage.MoonScrubbers.Shared.Grid)
+local Service = {}
+
+function Service.start(config, floor, remotes)
+    local c = config.Cleaning
+    local cells, pending, sessions = {}, {}, {}
+    local totalCollected, revision = 0, 0
+    for id = 1, c.Columns * c.Rows do cells[id] = c.DustPerCell end
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Include
+    rayParams.FilterDescendantsInstances = {floor}
+
+    remotes.Snapshot.OnServerInvoke = function(player)
+        local now = os.clock()
+        local session = sessions[player] or {}
+        sessions[player] = session
+        if session.snapshotAt and now - session.snapshotAt < 1 then return nil end
+        session.snapshotAt = now
+        return {cells = table.clone(cells), progress = totalCollected / (c.Columns * c.Rows * c.DustPerCell), revision = revision}
+    end
+
+    remotes.Scrub.OnServerEvent:Connect(function(player, target)
+        local now = os.clock()
+        local session = sessions[player] or {}
+        sessions[player] = session
+        -- Rate limit before any raycasts or collection work, including invalid requests.
+        if session.requestAt and now - session.requestAt < 0.9 / c.RequestsPerSecond then return end
+        session.requestAt = now
+        if typeof(target) ~= "Vector3" or not Grid.finiteVector(target.X, target.Y, target.Z) then return end
+        local character = player.Character
+        local head = character and character:FindFirstChild("Head")
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        local tool = character and character:FindFirstChild("LSD Toothbrush")
+        if not head or not humanoid or humanoid.Health <= 0 or not tool or not tool:GetAttribute("MoonTool") then return end
+        local direction = target - head.Position
+        if direction.Magnitude < 0.01 or direction.Magnitude > c.MaxReach then return end
+        -- Check actual line of sight: characters and scenery can obstruct the floor.
+        local visibility = RaycastParams.new()
+        visibility.FilterType = Enum.RaycastFilterType.Exclude
+        visibility.FilterDescendantsInstances = {character}
+        local visibleHit = workspace:Raycast(head.Position, direction.Unit * (direction.Magnitude + 0.2), visibility)
+        if not visibleHit or visibleHit.Instance ~= floor then return end
+        local hit = workspace:Raycast(head.Position, direction.Unit * (direction.Magnitude + 0.2), rayParams)
+        if not hit or (hit.Position - target).Magnitude > 0.5 or hit.Normal.Y < 0.9 then return end
+        local localPoint = floor.CFrame:PointToObjectSpace(hit.Position)
+        if not Grid.cellAt(localPoint.X, localPoint.Z, c.CellSize, c.Columns, c.Rows) then return end
+        local previous, previousAt = session.target, session.validAt
+        session.target, session.validAt = target, now
+        -- Holding still does not farm dust. Real aim/movement drives the brush strokes.
+        if not previous or now - previousAt > 0.5 then return end
+        local distance = (target - previous).Magnitude
+        if distance < c.MinStrokeDistance or distance > c.MaxStrokeDistance then return end
+        local tank = player:GetAttribute("Dust") or 0
+        local capacity = player:GetAttribute("TankCapacity") or config.StartingStats.TankCapacity
+        local ids = Grid.cellsWithin(localPoint.X, localPoint.Z, c.BrushRadius, c.CellSize, c.Columns, c.Rows)
+        local budget = c.DustPerSecond * math.min(now - previousAt, 0.2)
+        local amount, changes = Grid.collect(cells, ids, budget, tank, capacity)
+        if amount <= 0 then return end
+        player:SetAttribute("Dust", math.min(capacity, tank + amount))
+        totalCollected = totalCollected + amount
+        revision = revision + 1
+        for id, remaining in pairs(changes) do pending[id] = remaining end
+        remotes.Collected:FireClient(player, hit.Position, amount)
+    end)
+
+    Players.PlayerRemoving:Connect(function(player) sessions[player] = nil end)
+    task.spawn(function()
+        while floor.Parent do
+            task.wait(c.ReplicationInterval)
+            if next(pending) then
+                remotes.CellsChanged:FireAllClients(pending, totalCollected / (c.Columns * c.Rows * c.DustPerCell), revision)
+                pending = {}
+            end
+        end
+    end)
+end
+
+return Service
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="ModuleScript" referent="10">
+          <Properties>
+            <string name="Name">PlayerStateService</string>
+            <string name="Source"><![CDATA[--!strict
+local Players = game:GetService("Players")
+local State = {}
+
+function State.start(config)
+    local function characterAdded(player, character)
+        local humanoid = character:WaitForChild("Humanoid", 10)
+        local backpack = player:WaitForChild("Backpack", 10)
+        if not humanoid or not backpack or not player.Parent then return end
+        local tool = Instance.new("Tool")
+        tool.Name = "LSD Toothbrush"
+        tool.RequiresHandle = false
+        tool.CanBeDropped = false
+        tool:SetAttribute("MoonTool", true)
+        tool.Parent = backpack
+        humanoid:EquipTool(tool)
+
+        local pack = Instance.new("Part")
+        pack.Name = "DustTank"
+        pack.Size = Vector3.new(1.4, 1.8, 0.7)
+        pack.Color = Color3.fromRGB(65, 74, 90)
+        pack.Massless = true
+        pack.CanCollide, pack.CanTouch, pack.CanQuery = false, false, false
+        local torso = character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+        if not torso then pack:Destroy(); return end
+        pack.CFrame = torso.CFrame * CFrame.new(0, 0, 0.85)
+        pack.Parent = character
+        local weld = Instance.new("WeldConstraint")
+        weld.Part0, weld.Part1, weld.Parent = torso, pack, pack
+        local gui = Instance.new("SurfaceGui")
+        gui.Face = Enum.NormalId.Back
+        gui.CanvasSize = Vector2.new(140, 180)
+        gui.Parent = pack
+        local background = Instance.new("Frame")
+        background.Size = UDim2.fromScale(0.7, 0.8)
+        background.Position = UDim2.fromScale(0.15, 0.1)
+        background.BackgroundColor3 = Color3.fromRGB(25, 30, 40)
+        background.Parent = gui
+        local fill = Instance.new("Frame")
+        fill.Name = "Fill"
+        fill.AnchorPoint = Vector2.new(0, 1)
+        fill.Position = UDim2.fromScale(0, 1)
+        fill.BackgroundColor3 = Color3.fromRGB(210, 181, 123)
+        fill.Parent = background
+        -- Only the server updates tank quantities and the replicated backpack gauge.
+        local function update()
+            local ratio = player:GetAttribute("Dust") / player:GetAttribute("TankCapacity")
+            fill.Size = UDim2.fromScale(1, math.clamp(ratio, 0, 1))
+        end
+        update()
+        local connection = player:GetAttributeChangedSignal("Dust"):Connect(update)
+        pack.Destroying:Once(function() connection:Disconnect() end)
+    end
+    local function added(player)
+        player:SetAttribute("Dust", 0)
+        player:SetAttribute("TankCapacity", config.StartingStats.TankCapacity)
+        player.CharacterAdded:Connect(function(character) characterAdded(player, character) end)
+        if player.Character then task.spawn(characterAdded, player, player.Character) end
+    end
+    Players.PlayerAdded:Connect(added)
+    for _, player in ipairs(Players:GetPlayers()) do added(player) end
+end
+
+return State
+]]></string>
+          </Properties>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+  <Item class="StarterPlayer" referent="11">
+    <Properties>
+      <string name="Name">StarterPlayer</string>
+    </Properties>
+    <Item class="StarterPlayerScripts" referent="12">
+      <Properties>
+        <string name="Name">StarterPlayerScripts</string>
+      </Properties>
+      <Item class="Folder" referent="13">
+        <Properties>
+          <string name="Name">MoonScrubbers</string>
+        </Properties>
+        <Item class="LocalScript" referent="14">
+          <Properties>
+            <string name="Name">Bootstrap</string>
+            <string name="Source"><![CDATA[--!strict
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local root = ReplicatedStorage:WaitForChild("MoonScrubbers")
+while not root:GetAttribute("Ready") do root:GetAttributeChangedSignal("Ready"):Wait() end
+local Config = require(root.Shared.Config)
+local controllers = script.Parent.Controllers
+local input = require(controllers.InputController).new()
+local viewmodel = require(controllers.ViewmodelController).new()
+local ui = require(controllers.UIController).new()
+local effects = require(controllers.EffectsController).new(Config)
+require(controllers.CleaningController).start(Config, root, input, viewmodel, ui, effects)
+]]></string>
+          </Properties>
+        </Item>
+        <Item class="Folder" referent="15">
+          <Properties>
+            <string name="Name">Controllers</string>
+          </Properties>
+          <Item class="ModuleScript" referent="16">
+            <Properties>
+              <string name="Name">CleaningController</string>
+              <string name="Source"><![CDATA[--!strict
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local Cleaning = {}
+
+function Cleaning.start(config, root, input, viewmodel, ui, effects)
+    local player = Players.LocalPlayer
+    local c = config.Cleaning
+    local remotes = root:WaitForChild("Remotes")
+    local floor = workspace:WaitForChild("MoonScrubbersPrototype"):WaitForChild("CleanSurface")
+    local surface = Instance.new("SurfaceGui")
+    surface.Name, surface.Face, surface.Adornee = "LocalDustGrid", Enum.NormalId.Top, floor
+    surface.CanvasSize = Vector2.new(c.Columns * 32, c.Rows * 32)
+    surface.LightInfluence, surface.AlwaysOnTop = 1, false
+    surface.Parent = player:WaitForChild("PlayerGui")
+    local frames = {}
+    for row = 1, c.Rows do
+        for column = 1, c.Columns do
+            local id = (row - 1) * c.Columns + column
+            local frame = Instance.new("Frame")
+            frame.Size = UDim2.fromScale(1 / c.Columns, 1 / c.Rows)
+            frame.Position = UDim2.fromScale((column - 1) / c.Columns, (row - 1) / c.Rows)
+            frame.BorderSizePixel = 0
+            frame.BackgroundColor3 = Color3.fromRGB(166, 151, 123)
+            frame.Parent = surface
+            frames[id] = frame
+        end
+    end
+    local function apply(cells, progress)
+        for id, remaining in pairs(cells) do
+            if frames[id] then frames[id].BackgroundTransparency = 1 - remaining / c.DustPerCell end
+        end
+        ui:setProgress(progress)
+    end
+    -- Connect before requesting a snapshot; buffer deltas while the request is in flight.
+    local ready, queued, revision = false, {}, -1
+    remotes.CellsChanged.OnClientEvent:Connect(function(cells, progress, incomingRevision)
+        if not ready then table.insert(queued, {cells, progress, incomingRevision}); return end
+        if incomingRevision <= revision then return end
+        revision = incomingRevision
+        apply(cells, progress)
+    end)
+    local snapshot = remotes.Snapshot:InvokeServer()
+    assert(snapshot, "Initial dust snapshot unavailable")
+    revision = snapshot.revision
+    apply(snapshot.cells, snapshot.progress)
+    for _, delta in ipairs(queued) do
+        if delta[3] > revision then
+            revision = delta[3]
+            apply(delta[1], delta[2])
+        end
+    end
+    ready = true
+    remotes.Collected.OnClientEvent:Connect(function(position) effects:collected(position) end)
+
+    local equipped, previousMode, previousMin, previousMax = false, nil, nil, nil
+    local function setEquipped(enabled)
+        if equipped == enabled then return end
+        equipped = enabled
+        if enabled then
+            previousMode = player.CameraMode
+            previousMin, previousMax = player.CameraMinZoomDistance, player.CameraMaxZoomDistance
+            player.CameraMode = Enum.CameraMode.LockFirstPerson
+            player.CameraMinZoomDistance, player.CameraMaxZoomDistance = 0.5, 0.5
+        else
+            player.CameraMode = previousMode or Enum.CameraMode.Classic
+            player.CameraMaxZoomDistance = previousMax or 128
+            player.CameraMinZoomDistance = previousMin or 0.5
+        end
+        input:setEnabled(enabled)
+        ui.enabled = enabled
+        ui:update()
+    end
+    local characterConnections = {}
+    local function onCharacter(character)
+        setEquipped(false)
+        for _, connection in ipairs(characterConnections) do connection:Disconnect() end
+        characterConnections = {}
+        local function refresh()
+            local tool = character:FindFirstChild("LSD Toothbrush")
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            setEquipped(tool ~= nil and humanoid ~= nil and humanoid.Health > 0)
+        end
+        table.insert(characterConnections, character.ChildAdded:Connect(refresh))
+        table.insert(characterConnections, character.ChildRemoved:Connect(refresh))
+        local humanoid = character:WaitForChild("Humanoid")
+        table.insert(characterConnections, humanoid.Died:Connect(function() setEquipped(false) end))
+        refresh()
+    end
+    player.CharacterAdded:Connect(onCharacter)
+    player.CharacterRemoving:Connect(function() setEquipped(false) end)
+    if player.Character then task.spawn(onCharacter, player.Character) end
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Include
+    rayParams.FilterDescendantsInstances = {floor}
+    local lastSent = 0
+    RunService:BindToRenderStep("MoonBrush", Enum.RenderPriority.Camera.Value + 1, function()
+        local camera = workspace.CurrentCamera
+        if not camera then return end
+        local active = equipped and input.held
+        viewmodel:update(camera, equipped, active, os.clock())
+        effects:update(active)
+        if not active or os.clock() - lastSent < 1 / c.RequestsPerSecond then return end
+        lastSent = os.clock()
+        local size = camera.ViewportSize
+        local ray = camera:ViewportPointToRay(size.X / 2, size.Y / 2)
+        local hit = workspace:Raycast(ray.Origin, ray.Direction * c.MaxReach, rayParams)
+        if hit then remotes.Scrub:FireServer(hit.Position) end
+    end)
+end
+
+return Cleaning
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="17">
+            <Properties>
+              <string name="Name">EffectsController</string>
+              <string name="Source"><![CDATA[--!strict
+local Debris = game:GetService("Debris")
+local TweenService = game:GetService("TweenService")
+local Players = game:GetService("Players")
+local Effects = {}
+
+function Effects.new(config)
+    local sound = Instance.new("Sound")
+    sound.Name = "MoonBrushing"
+    sound.SoundId = config.Audio.BrushSoundId
+    sound.Volume, sound.Looped = 0.25, true
+    sound.Parent = workspace.CurrentCamera
+    local self = {lastCollection = -math.huge}
+    function self:collected(position)
+        self.lastCollection = os.clock()
+        if sound.SoundId ~= "" and not sound.IsPlaying then sound:Play() end
+        local bead = Instance.new("Part")
+        bead.Name, bead.Shape = "LocalDust", Enum.PartType.Ball
+        bead.Size = Vector3.new(0.12, 0.12, 0.12)
+        bead.Anchored = true
+        bead.CanCollide, bead.CanTouch, bead.CanQuery = false, false, false
+        bead.Color = Color3.fromRGB(219, 195, 149)
+        bead.Position, bead.Parent = position + Vector3.new(0, 0.1, 0), workspace
+        local emitter = Instance.new("ParticleEmitter")
+        emitter.Texture = "rbxasset://textures/particles/smoke_main.dds"
+        emitter.Color = ColorSequence.new(bead.Color)
+        emitter.Rate = 0
+        emitter.Lifetime = NumberRange.new(0.2, 0.4)
+        emitter.Speed = NumberRange.new(0.5, 1.5)
+        emitter.SpreadAngle = Vector2.new(60, 60)
+        emitter.Size = NumberSequence.new(0.18)
+        emitter.Parent = bead
+        emitter:Emit(4)
+        local character = Players.LocalPlayer.Character
+        local tank = character and character:FindFirstChild("DustTank")
+        if tank then
+            TweenService:Create(bead, TweenInfo.new(0.35), {Position = tank.Position, Transparency = 1}):Play()
+        end
+        Debris:AddItem(bead, 0.5)
+    end
+    function self:update(active)
+        if not active or os.clock() - self.lastCollection > 0.25 then sound:Stop() end
+    end
+    return self
+end
+
+return Effects
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="18">
+            <Properties>
+              <string name="Name">InputController</string>
+              <string name="Source"><![CDATA[--!strict
+local ContextActionService = game:GetService("ContextActionService")
+local UserInputService = game:GetService("UserInputService")
+local GuiService = game:GetService("GuiService")
+local Input = {}
+
+function Input.new()
+    local self = {held = false, enabled = false}
+    UserInputService.WindowFocusReleased:Connect(function() self.held = false end)
+    GuiService.MenuOpened:Connect(function() self.held = false end)
+    function self:setEnabled(enabled)
+        self.enabled, self.held = enabled, false
+        ContextActionService:UnbindAction("MoonScrub")
+        if not enabled then return end
+        ContextActionService:BindAction("MoonScrub", function(_, state)
+            self.held = state == Enum.UserInputState.Begin or state == Enum.UserInputState.Change
+            return Enum.ContextActionResult.Sink
+        end, true, Enum.UserInputType.MouseButton1, Enum.KeyCode.ButtonR2)
+        ContextActionService:SetTitle("MoonScrub", "POETS")
+        ContextActionService:SetPosition("MoonScrub", UDim2.fromScale(0.78, 0.55))
+    end
+    return self
+end
+
+return Input
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="19">
+            <Properties>
+              <string name="Name">UIController</string>
+              <string name="Source"><![CDATA[--!strict
+local Players = game:GetService("Players")
+local UI = {}
+
+function UI.new()
+    local player = Players.LocalPlayer
+    local gui = Instance.new("ScreenGui")
+    gui.Name, gui.ResetOnSpawn, gui.IgnoreGuiInset = "MoonHUD", false, false
+    gui.Parent = player:WaitForChild("PlayerGui")
+    local function label(name, position, size, text)
+        local item = Instance.new("TextLabel")
+        item.Name, item.Position, item.Size = name, position, size
+        item.BackgroundColor3 = Color3.fromRGB(21, 28, 42)
+        item.BackgroundTransparency = 0.15
+        item.TextColor3 = Color3.fromRGB(237, 241, 245)
+        item.Font = Enum.Font.GothamBold
+        item.TextSize, item.TextWrapped = 16, true
+        item.Text, item.Parent = text, gui
+        return item
+    end
+    local tank = label("Tank", UDim2.fromScale(0.03, 0.03), UDim2.fromScale(0.4, 0.065), "")
+    local progress = label("Progress", UDim2.fromScale(0.57, 0.03), UDim2.fromScale(0.4, 0.065), "Zone: 0% schoon")
+    local help = label("Help", UDim2.fromScale(0.1, 0.78), UDim2.fromScale(0.8, 0.12), "")
+    local crosshair = label("Crosshair", UDim2.fromScale(0.5, 0.5), UDim2.fromOffset(12, 12), "+")
+    crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+    crosshair.BackgroundTransparency = 1
+    local bar = Instance.new("Frame")
+    bar.Size, bar.Position = UDim2.fromScale(0, 0.006), UDim2.fromScale(0.03, 0.097)
+    bar.BackgroundColor3 = Color3.fromRGB(214, 185, 126)
+    bar.BorderSizePixel, bar.Parent = 0, gui
+    local self = {enabled = false}
+    function self:update()
+        local dust = player:GetAttribute("Dust") or 0
+        local capacity = player:GetAttribute("TankCapacity") or 50
+        tank.Text = string.format("STOFTANK  %.1f / %d", dust, capacity)
+        bar.Size = UDim2.fromScale(0.4 * math.clamp(dust / capacity, 0, 1), 0.006)
+        crosshair.Visible = self.enabled
+        if dust >= capacity - 0.001 then
+            help.Text = "Tank vol! Verkopen volgt in stap 4. Herstart de testsessie om opnieuw te testen."
+        elseif self.enabled then
+            help.Text = "Kijk omlaag. Houd muis / R2 / POETS vast en beweeg het richtpunt over het stof."
+        else
+            help.Text = "Rust je LSD Toothbrush uit om te poetsen."
+        end
+    end
+    function self:setProgress(value)
+        progress.Text = string.format("ZONE  %.1f%% schoon", value * 100)
+    end
+    player:GetAttributeChangedSignal("Dust"):Connect(function() self:update() end)
+    player:GetAttributeChangedSignal("TankCapacity"):Connect(function() self:update() end)
+    self:update()
+    return self
+end
+
+return UI
+]]></string>
+            </Properties>
+          </Item>
+          <Item class="ModuleScript" referent="20">
+            <Properties>
+              <string name="Name">ViewmodelController</string>
+              <string name="Source"><![CDATA[--!strict
+local Viewmodel = {}
+
+function Viewmodel.new()
+    local model = Instance.new("Model")
+    model.Name = "MoonToothbrushViewmodel"
+    local parts = {}
+    local function part(name, size, color, offset)
+        local item = Instance.new("Part")
+        item.Name, item.Size, item.Color = name, size, color
+        item.Anchored = true
+        item.CanCollide, item.CanTouch, item.CanQuery, item.CastShadow = false, false, false, false
+        item.Parent = model
+        table.insert(parts, {part = item, offset = offset})
+    end
+    part("Glove", Vector3.new(0.32, 0.38, 0.5), Color3.fromRGB(228, 231, 232), CFrame.new(0, -0.12, 0))
+    part("Handle", Vector3.new(0.11, 0.1, 1.05), Color3.fromRGB(72, 184, 193), CFrame.new(0, 0, -0.38))
+    part("BrushHead", Vector3.new(0.24, 0.1, 0.35), Color3.fromRGB(72, 184, 193), CFrame.new(0, 0, -1))
+    part("Bristles", Vector3.new(0.21, 0.13, 0.3), Color3.fromRGB(242, 239, 211), CFrame.new(0, 0.1, -1))
+    local self = {model = model}
+    function self:update(camera, enabled, held, time)
+        model.Parent = enabled and camera or nil
+        if not enabled then return end
+        local stroke = held and math.sin(time * 24) or 0
+        local pose = camera.CFrame * CFrame.new(0.55 + stroke * 0.12, -0.48, -0.85)
+            * CFrame.Angles(math.rad(-12), math.rad(-15 + stroke * 8), math.rad(-12))
+        for _, item in ipairs(parts) do item.part.CFrame = pose * item.offset end
+    end
+    return self
+end
+
+return Viewmodel
+]]></string>
+            </Properties>
+          </Item>
+        </Item>
+      </Item>
+    </Item>
+  </Item>
+</roblox>
