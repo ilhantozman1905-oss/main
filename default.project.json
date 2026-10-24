@@ -1,0 +1,13 @@
+{
+  "name": "Moon Scrubbers",
+  "tree": {
+    "$className": "DataModel",
+    "ReplicatedStorage": {
+      "MoonScrubbers": { "$className": "Folder", "Shared": { "$path": "src/shared" } }
+    },
+    "ServerScriptService": { "MoonScrubbers": { "$path": "src/server" } },
+    "StarterPlayer": {
+      "StarterPlayerScripts": { "MoonScrubbers": { "$path": "src/client" } }
+    }
+  }
+}
